@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-visual" />
+  <title>迷你辦公室</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/office/office.css" />
+</head>
+<body>
+  <canvas id="view" aria-label="辦公室"></canvas>
+  <div id="labels"></div>
+  <div id="webgl-fallback" hidden>這台裝置沒有可用的 WebGL，沒辦法顯示 3D 辦公室。</div>
+  <div id="hud" hidden>
+    <header id="topbar">
+      <div class="top-left">
+        <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="18" r="10" fill="#ffd4e2"/><circle cx="12.2" cy="17" r="1.35" fill="#5c4568"/><circle cx="19.8" cy="17" r="1.35" fill="#5c4568"/><path d="M12.4 20.2c1.1 1.3 2.3 1.9 3.6 1.9s2.5-.6 3.6-1.9" fill="none" stroke="#d45b82" stroke-width="1.4" stroke-linecap="round"/><circle cx="10.2" cy="19.2" r="1.35" fill="#ffb3cb"/><circle cx="21.8" cy="19.2" r="1.35" fill="#ffb3cb"/></svg>
+        <div class="brand">迷你辦公室</div>
+        <div id="room-label">走廊</div>
+        <div id="conn" class="warn"><span class="status-dot"></span><span id="conn-text">連線中…</span></div>
+      </div>
+      <div class="top-right">
+        <div id="cam-switch" role="group" aria-label="鏡頭">
+          <button id="cam-iso" type="button" aria-pressed="true">俯瞰</button>
+          <button id="cam-follow" type="button" aria-pressed="false">跟隨</button>
+        </div>
+        <button id="cam-btn" type="button" aria-pressed="false" aria-label="切換鏡頭"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 8.5 9.6 6h4.8L16 8.5H19a1 1 0 0 1 1 1V18a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9.5a1 1 0 0 1 1-1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="2.6" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></button>
+        <div id="online-chip">在線 <span id="online-count">0</span></div>
+        <button id="help-btn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12M6 12h12M6 17h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>操作</button>
+        <button id="clock-btn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H6v16h4M13 8l4 4-4 4M9 12h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>下班</button>
+        <button id="unstuck-btn" type="button" aria-label="緊急急救"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 8.5v7M8.5 12h7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="label">緊急急救</span></button>
+        <button id="people-btn" type="button" aria-expanded="false" aria-label="選單"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+      </div>
+    </header>
+    <div id="stick" aria-hidden="true"><div id="stick-knob"></div></div>
+    <div id="actions"></div>
+    <button id="chat-toggle" type="button" aria-expanded="false">聊天</button>
+    <aside id="online">
+      <h2>在線夥伴 <span id="online-total">0</span></h2>
+      <ul id="online-list"></ul>
+      <button id="clock-drawer" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H6v16h4M13 8l4 4-4 4M9 12h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>下班</button>
+      <button id="help-drawer" type="button">操作</button>
+      <button id="pair-open" type="button">加入新裝置</button>
+      <button id="rename" type="button">改名稱</button>
+      <form id="rename-form" hidden>
+        <input id="rename-input" maxlength="16" aria-label="新的顯示名稱" />
+        <button type="submit">儲存</button>
+      </form>
+    </aside>
+    <div id="hint" hidden></div>
+  </div>
+  <div id="dialogue" hidden>
+    <div class="who">櫃檯 Lala 小姐</div>
+    <p id="dialogue-text"></p>
+    <div class="row">
+      <button type="button" id="btn-edit">調整設備擺設</button>
+      <button type="button" id="btn-later">下次再說</button>
+    </div>
+  </div>
+  <div id="editbar" hidden>
+    <div class="edit-head">
+      <strong>編輯設備</strong>
+      <span id="edit-hint">拖曳移動，點一下選取。旋轉和收回也可用 R、Delete。點清單再點地板可加設備。牆不能改。</span>
+      <button id="chairs-home" type="button">椅子歸位</button>
+      <button id="edit-done" type="button">結束編輯</button>
+    </div>
+    <div id="furn-tools">
+      <span id="furn-tools-label">點選設備，或從清單放到地板</span>
+      <button id="furn-rot" type="button" disabled>旋轉</button>
+      <button id="furn-remove" type="button" disabled>收回</button>
+      <button id="furn-clear" type="button" disabled>取消選取</button>
+      <button id="furn-cancel" type="button" disabled>取消</button>
+    </div>
+    <div id="room-chips"></div>
+    <div id="palette"></div>
+  </div>
+  <div id="whisper-asks" hidden></div>
+  <form id="chatbar" hidden>
+    <p id="chat-whisper" hidden tabindex="0">
+      <span id="chat-whisper-label"></span>
+      <span id="chat-whisper-list"></span>
+    </p>
+    <label class="sr" for="chat-input">聊天</label>
+    <input id="chat-input" maxlength="80" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="說點什麼…（Enter 送出）" />
+    <button type="submit">送出</button>
+  </form>
+  <section id="clockout" hidden>
+    <div class="card" role="dialog" aria-labelledby="clockout-title">
+      <h2 id="clockout-title">要下班了嗎？</h2>
+      <p class="muted">所有裝置會一起下班。造型和位置都會留著，下次輸入辦公室密碼就能回來。</p>
+      <div class="row">
+        <button type="button" id="clockout-yes">確定</button>
+        <button type="button" id="clockout-no">取消</button>
+      </div>
+    </div>
+  </section>
+  <section id="pair-dialog" hidden>
+    <div class="card" role="dialog" aria-labelledby="pair-title">
+      <h2 id="pair-title">加入新裝置</h2>
+      <p class="muted">在另一台輸入辦公室密碼，選擇「我已經有 ID」，再填下面的代碼。重新產生會讓上一組失效。</p>
+      <p id="pair-code" class="pair-code" aria-live="polite">------</p>
+      <p id="pair-error" class="error"></p>
+      <div class="row">
+        <button type="button" id="pair-refresh">重新產生</button>
+        <button type="button" id="pair-close">關閉</button>
+      </div>
+    </div>
+  </section>
+  <section id="elsewhere" hidden>
+    <div class="card" role="dialog" aria-labelledby="elsewhere-title">
+      <h2 id="elsewhere-title">已在其他裝置上線</h2>
+      <p class="muted">這台先暫停，不會自己搶回去。</p>
+      <button type="button" id="elsewhere-take">取回控制</button>
+    </div>
+  </section>
+  <section id="help" hidden>
+    <div class="card">
+      <h2>怎麼玩</h2>
+      <ul>
+        <li>WASD 或方向鍵移動，方向跟著鏡頭。點地板可以走過去，拖曳可以旋轉鏡頭，滾輪或雙指可以拉近拉遠。</li>
+        <li>按 V 或右上角的按鈕，在俯瞰和第三人稱跟隨之間切換。</li>
+        <li>靠近櫃檯的 Lala 小姐，按 E 或點她，就能調整螢幕、鍵盤和其他設備。</li>
+        <li>沙發區的零食櫃和販賣機按 E 可以拿餅乾或飲料，拿到手上再按 E 才會吃或喝。沒了就跟 Lala 小姐說，她會幫忙補上。</li>
+        <li>走進男廁或女廁，按 E 可以調整造型。</li>
+        <li>靠近辦公椅按 E 坐下，方向鍵會讓椅子滑行，再按 E 起立。椅子會留在你離開的地方。</li>
+        <li>卡在家具或牆裡時，按右上角的「緊急急救」，會立刻站好並回到出生點附近的空位。手機上要再按一次確認。</li>
+        <li>遊戲室的街機按 E 可以玩小遊戲，排行榜按 E 看成績。連線會保持著。</li>
+        <li>靠近另一位夥伴時，按 F 可以一起說悄悄話。靠近已經在說的人會先詢問，任何一人答應就能加入。再按 F 或走遠就離開。輸入框打字時不會誤觸。</li>
+        <li>下方輸入訊息，按 Enter 送出，會出現在頭頂。中文選字確認不會送出。</li>
+        <li>在線名單裡可以加入新裝置。另一台先輸入辦公室密碼，再選「我已經有 ID」。</li>
+        <li>手機用左下角搖桿移動，點地板也能走。單指在畫面上滑動就轉鏡頭，雙指縮放。右下角的按鈕會在可以坐下、說話或說悄悄話時出現。</li>
+      </ul>
+      <button type="button" id="help-close">知道了</button>
+    </div>
+  </section>
+  <section id="avatar" hidden>
+    <div class="card wide look-card">
+      <h2 id="avatar-title">打造你的造型</h2>
+      <p id="avatar-note" class="muted">大家會在辦公室看到這個造型。名稱下面會標小字 @id。</p>
+      <div class="avatar-layout">
+        <canvas id="preview" width="320" height="280"></canvas>
+        <div class="look-editor">
+          <label>顯示名稱<input id="avatar-name" maxlength="16" autocomplete="nickname" /></label>
+          <div id="look-tabs" class="look-tabs"></div>
+          <div id="look-panel" class="look-panel"></div>
+        </div>
+      </div>
+      <p id="avatar-error" class="error"></p>
+      <div class="row">
+        <button type="button" id="avatar-save">進入辦公室</button>
+        <button type="button" id="avatar-random">隨機</button>
+        <button type="button" id="avatar-cancel" hidden>離開鏡子</button>
+      </div>
+    </div>
+  </section>
+  <section id="gate">
+    <div class="card">
+      <div class="gate-art" aria-hidden="true"></div>
+      <h1>迷你辦公室</h1>
+      <p id="gate-msg" class="muted">正在連上辦公室…</p>
+      <form id="form-password">
+        <label>辦公室密碼<input id="office-password" type="password" autocomplete="current-password" /></label>
+        <button type="submit">進入</button>
+      </form>
+      <form id="form-register" hidden>
+        <label>你的 ID<input id="office-id" maxlength="16" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="例如 naco" /></label>
+        <p class="muted">2–16 個字，以英數開頭，可含底線或減號。會顯示成 @id，不能跟別人重複。</p>
+        <label>顯示名稱<input id="office-name" maxlength="16" autocomplete="nickname" placeholder="大家看到的名字" /></label>
+        <div class="row">
+          <button type="submit">下一步</button>
+          <button type="button" id="have-id">我已經有 ID</button>
+          <button type="button" id="back-password">返回</button>
+        </div>
+      </form>
+      <form id="form-pair" hidden>
+        <label>已有的 ID<input id="pair-id" maxlength="16" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="例如 naco" /></label>
+        <label>配對代碼<input id="pair-code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="另一台顯示的代碼" /></label>
+        <div class="row">
+          <button type="submit">加入這台裝置</button>
+          <button type="button" id="pair-back">返回</button>
+        </div>
+      </form>
+      <p id="gate-error" class="error"></p>
+      <a class="home" href="/games">小遊戲大廳</a>
+    </div>
+  </section>
+  <section id="arcade" hidden>
+    <div class="arcade-bar">
+      <strong>小遊戲</strong>
+      <button type="button" id="arcade-close">回到辦公室</button>
+    </div>
+    <iframe id="arcade-frame" title="小遊戲大廳"></iframe>
+  </section>
+  <section id="board" hidden>
+    <div class="card wide">
+      <h2>排行榜</h2>
+      <div id="board-tabs" class="row"></div>
+      <ol id="board-list"></ol>
+      <p id="board-me" class="muted"></p>
+      <button type="button" id="board-close" class="ghost">關閉</button>
+    </div>
+  </section>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "/office/vendor/three.module.js"
+    }
+  }
+  </script>
+  <script type="module" src="/office/game.js"></script>
+</body>
+</html>

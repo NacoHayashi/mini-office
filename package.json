@@ -1,0 +1,24 @@
+{
+  "name": "mini-office",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "node tests/unit.mjs",
+    "vendor:extras": "node scripts/bundle-office.mjs",
+    "test:e2e": "node tests/office.e2e.mjs",
+    "test:e2e:ci": "node tests/office.e2e.mjs --core"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261016.1",
+    "esbuild": "^0.28.2",
+    "n8ao": "^2.0.1",
+    "playwright": "^1.56.1",
+    "postprocessing": "^6.39.5",
+    "three": "^0.170.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.151.0"
+  }
+}

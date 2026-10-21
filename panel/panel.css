@@ -1,0 +1,74 @@
+@font-face {
+  font-family: "OfficeUI";
+  src: local("WenQuanYi Micro Hei"), local("文泉驛微米黑"), local("Droid Sans Fallback");
+}
+:root {
+  --ink: #4a3b55;
+  --muted: #8d7b98;
+  --line: #f0dbe6;
+  --accent: #f08aab;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "OfficeUI", "WenQuanYi Micro Hei", "Droid Sans Fallback", sans-serif;
+  color: var(--ink);
+  background: linear-gradient(160deg, #ffe8f2, #e5f6f3 50%, #efe7ff);
+}
+main { width: min(880px, calc(100% - 28px)); margin: 28px auto 48px; }
+header { display: flex; justify-content: space-between; align-items: end; gap: 12px; margin-bottom: 16px; }
+h1, h2 { margin: 0 0 8px; }
+a { color: var(--accent); font-weight: 800; }
+.eyebrow { margin: 0; color: var(--muted); letter-spacing: 0.08em; }
+.card {
+  background: rgba(255,253,251,0.94);
+  border-radius: var(--r-lg);
+  padding: 20px;
+  box-shadow: 0 16px 40px rgba(120, 80, 110, 0.14);
+  margin-bottom: 16px;
+}
+.muted { color: var(--muted); line-height: 1.5; }
+.error { color: #c45b78; min-height: 1.2em; }
+code { background: #fff0f5; padding: 1px 6px; border-radius: var(--r-sm); }
+label { display: block; margin: 10px 0; font-size: 14px; }
+input, button { font: inherit; }
+input {
+  width: 100%;
+  margin-top: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+}
+button {
+  border: 0;
+  background: var(--accent);
+  color: white;
+  border-radius: var(--r-md);
+  padding: 8px 14px;
+  cursor: pointer;
+}
+button.ghost, .row button.ghost {
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; }
+th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.row { display: flex; gap: 6px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #c9b6c8; margin-right: 6px; }
+.dot.on { background: #6ec8be; }
+.device {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.device button { border-radius: var(--r-md); padding: 8px 14px; min-height: 40px; }

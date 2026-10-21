@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>辦公室管理</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="panel.css" />
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">迷你遊戲</p>
+        <h1>辦公室管理</h1>
+      </div>
+      <a href="/">回到辦公室</a>
+    </header>
+    <section id="login" class="card">
+      <h2>登入</h2>
+      <p class="muted">請輸入密碼。</p>
+      <form id="form-token">
+        <label>密碼<input id="seed-input" type="password" autocomplete="current-password" /></label>
+        <button type="submit">進入</button>
+      </form>
+      <p id="login-error" class="error"></p>
+    </section>
+    <section id="panel" class="card" hidden>
+      <h2>辦公室密碼</h2>
+      <p id="pw-state" class="muted">讀取中…</p>
+      <p class="muted">更換密碼後，所有人的登入會失效，需要重輸新密碼。新密碼至少 8 個字。同一台裝置仍會回到原來的 ID。</p>
+      <form id="form-password">
+        <label>新的辦公室密碼<input id="new-password" type="password" autocomplete="new-password" /></label>
+        <label>再輸入一次<input id="new-password2" type="password" autocomplete="new-password" /></label>
+        <button type="submit">儲存新密碼</button>
+      </form>
+      <p id="pw-error" class="error"></p>
+      <h2>在線與成員</h2>
+      <p class="muted">可以踢下線（對方要重輸密碼）或移除 ID（之後別人才能用這個 ID）。每個人底下是已加入的裝置，可以單獨移除一台。</p>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>顯示名稱</th><th>狀態</th><th></th></tr>
+        </thead>
+        <tbody id="members"></tbody>
+      </table>
+      <p id="empty" class="muted" hidden>還沒有人登記。</p>
+      <h2>備份</h2>
+      <p class="muted">匯出可以下載目前的成員、分數和擺設。這份備份含有敏感資料，請只存在你信任的地方。匯入會蓋掉現在的資料。</p>
+      <div class="row">
+        <button id="export-backup" type="button" class="ghost">匯出備份</button>
+        <button id="import-backup" type="button" class="ghost">匯入備份</button>
+        <input id="import-file" type="file" accept="application/json,.json" hidden />
+      </div>
+      <p id="backup-error" class="error"></p>
+      <button id="refresh" type="button" class="ghost">重新整理</button>
+      <button id="logout" type="button" class="ghost">登出</button>
+      <button id="revoke-admins" type="button" class="ghost">登出所有管理登入</button>
+    </section>
+  </main>
+  <script src="panel.js"></script>
+</body>
+</html>

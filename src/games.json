@@ -1,0 +1,101 @@
+[
+  {
+    "id": "zip",
+    "title": "Zip",
+    "desc": "一筆畫連起所有數字並填滿格子",
+    "iconStyle": "background:linear-gradient(135deg,#ff9a3c,#ff5f6d)",
+    "icon": "<svg viewBox=\"0 0 100 100\" fill=\"none\" stroke=\"#fff\" stroke-width=\"12\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M22 25H78V50H22V75H78\"/></svg>",
+    "score": {
+      "title": "Zip",
+      "unit": "題",
+      "mode": "inc",
+      "max": 100000,
+      "maxDelta": 1
+    }
+  },
+  {
+    "id": "queens",
+    "title": "Queens 貓掌版",
+    "desc": "每列、每欄、每色塊各放一個貓掌",
+    "iconStyle": "background:linear-gradient(135deg,#b07cff,#7b5cff)",
+    "icon": "<svg viewBox=\"0 0 100 100\" fill=\"#fff\"><ellipse cx=\"50\" cy=\"66\" rx=\"22\" ry=\"18\"/><ellipse cx=\"22\" cy=\"40\" rx=\"9\" ry=\"12\" transform=\"rotate(-25 22 40)\"/><ellipse cx=\"40\" cy=\"25\" rx=\"9\" ry=\"12\" transform=\"rotate(-8 40 25)\"/><ellipse cx=\"60\" cy=\"25\" rx=\"9\" ry=\"12\" transform=\"rotate(8 60 25)\"/><ellipse cx=\"78\" cy=\"40\" rx=\"9\" ry=\"12\" transform=\"rotate(25 78 40)\"/></svg>",
+    "score": {
+      "title": "Queens 貓掌版",
+      "unit": "題",
+      "mode": "inc",
+      "max": 100000,
+      "maxDelta": 1
+    }
+  },
+  {
+    "id": "sudoku",
+    "title": "Mini Sudoku 迷你數獨",
+    "desc": "6×6 數獨，填入 1～6",
+    "iconStyle": "background:linear-gradient(135deg,#4fc3f7,#0a66c2)",
+    "icon": "<svg viewBox=\"0 0 100 100\"><text x=\"50\" y=\"58\" text-anchor=\"middle\" dominant-baseline=\"middle\" font-size=\"52\" font-weight=\"800\" fill=\"#fff\" font-family=\"sans-serif\">6</text><rect x=\"12\" y=\"12\" width=\"76\" height=\"76\" rx=\"10\" fill=\"none\" stroke=\"#fff\" stroke-width=\"7\"/></svg>",
+    "score": {
+      "title": "Mini Sudoku",
+      "unit": "題",
+      "mode": "inc",
+      "max": 100000,
+      "maxDelta": 1
+    }
+  },
+  {
+    "id": "patches",
+    "title": "Patches 拼布",
+    "desc": "依提示把網格切成長方形",
+    "iconStyle": "background:linear-gradient(135deg,#5fd39a,#1f9e6e)",
+    "icon": "<svg viewBox=\"0 0 100 100\" fill=\"#fff\"><rect x=\"12\" y=\"12\" width=\"44\" height=\"30\" rx=\"6\"/><rect x=\"62\" y=\"12\" width=\"26\" height=\"76\" rx=\"6\"/><rect x=\"12\" y=\"48\" width=\"44\" height=\"40\" rx=\"6\" opacity=\".7\"/></svg>",
+    "score": {
+      "title": "Patches 拼布",
+      "unit": "題",
+      "mode": "inc",
+      "max": 100000,
+      "maxDelta": 1
+    }
+  },
+  {
+    "id": "match3",
+    "title": "皇家消消樂",
+    "desc": "三消闖關：火箭、炸彈、彩虹球，共 10 關",
+    "iconStyle": "background:linear-gradient(135deg,#ffb36b,#ff6fa5)",
+    "icon": "<svg viewBox=\"0 0 100 100\"><path d=\"M14 72L20 30L38 50L50 22L62 50L80 30L86 72Z\" fill=\"#fff\" stroke=\"#fff\" stroke-width=\"6\" stroke-linejoin=\"round\"/><circle cx=\"50\" cy=\"60\" r=\"8\" fill=\"#ff7aa8\"/></svg>",
+    "score": {
+      "title": "皇家消消樂",
+      "unit": "關",
+      "mode": "max",
+      "max": 10,
+      "maxDelta": 10
+    }
+  },
+  {
+    "id": "bbq",
+    "title": "燒肉屋｜炭火小老闆",
+    "name": "燒肉屋",
+    "desc": "炭火烤肉經營，掌握火候服務客人達成每日目標",
+    "iconStyle": "background:linear-gradient(135deg,#ff8a4c,#c0392b)",
+    "icon": "<svg viewBox=\"0 0 100 100\"><path d=\"M18 46H82A32 30 0 0 1 18 46Z\" fill=\"#fff\"/><g stroke=\"#fff\" stroke-width=\"4\"><path d=\"M14 46H86\"/><path d=\"M34 74L26 92M66 74L74 92\"/></g><g fill=\"none\" stroke=\"#fff\" stroke-width=\"5\" stroke-linecap=\"round\"><path d=\"M34 34Q28 26 34 18\"/><path d=\"M50 34Q44 24 50 14\"/><path d=\"M66 34Q60 26 66 18\"/></g></svg>",
+    "score": {
+      "title": "燒肉屋",
+      "unit": "元",
+      "mode": "max",
+      "max": 100000000,
+      "maxDelta": 200000
+    }
+  },
+  {
+    "id": "cat2048",
+    "title": "2048 貓咪進化",
+    "desc": "合併相同貓咪，養出黃金星貓",
+    "iconStyle": "background:linear-gradient(135deg,#ffc58a,#e8935a)",
+    "icon": "<svg viewBox=\"0 0 100 100\"><path d=\"M16 48L22 12L44 32Z M84 48L78 12L56 32Z\" fill=\"#fff\"/><ellipse cx=\"50\" cy=\"58\" rx=\"36\" ry=\"30\" fill=\"#fff\"/><circle cx=\"38\" cy=\"56\" r=\"5\" fill=\"#e8935a\"/><circle cx=\"62\" cy=\"56\" r=\"5\" fill=\"#e8935a\"/><path d=\"M46 65H54L50 69Z\" fill=\"#ff8fa3\"/></svg>",
+    "score": {
+      "title": "2048 貓咪進化",
+      "unit": "分",
+      "mode": "max",
+      "max": 2000000,
+      "maxDelta": 100000
+    }
+  }
+]

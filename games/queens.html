@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>貓掌 Queens</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;background:#f4f2ee;color:#1d1d1d;display:flex;justify-content:center;min-height:100vh}
+.app{width:100%;max-width:520px;padding:16px;display:flex;flex-direction:column;gap:12px}
+h1{margin:0;font-size:28px;text-align:center}h1 span{color:#0a66c2}
+.sub{text-align:center;color:#666;font-size:14px;margin:0}
+.bar{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}
+select,button{font:inherit;font-size:15px;padding:8px 14px;border-radius:999px;border:1.5px solid #0a66c2;background:#fff;color:#0a66c2;cursor:pointer}
+button.primary{background:#0a66c2;color:#fff}button:active{transform:scale(.96)}
+.wrap{position:relative;width:100%;aspect-ratio:1}
+.board{display:grid;grid-auto-rows:minmax(0,1fr);width:100%;height:100%;border:3px solid #222;border-radius:12px;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;background:#222}
+.cell{position:relative;min-width:0;min-height:0;overflow:hidden;line-height:0;font-size:0;border:0;padding:0;cursor:pointer;
+ --t:0px;--l:0px;--b:0px;--r:0px;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.18),inset 0 var(--t) 0 #222,inset var(--l) 0 0 #222,inset 0 calc(-1*var(--b)) 0 #222,inset calc(-1*var(--r)) 0 0 #222}
+.cell.bt{--t:2.5px}.cell.bl{--l:2.5px}.cell.bb{--b:2.5px}.cell.br{--r:2.5px}
+.cell .x,.cell svg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none}
+.cell .x{width:40%;height:40%}
+.cell svg{width:68%;height:68%}
+.cell.bad{background-image:repeating-linear-gradient(45deg,rgba(220,30,30,.35) 0 6px,transparent 6px 12px)}
+.cell.bad svg path,.cell.bad svg ellipse{fill:#d42020}
+.cell.hint{animation:pulse .9s ease 2}@keyframes pulse{50%{filter:brightness(.75)}}
+.win{display:none;position:absolute;inset:0;background:rgba(255,255,255,.88);border-radius:12px;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+.win.show{display:flex}.win h2{margin:0;font-size:32px}
+</style></head><body><div class="app">
+<h1><span>Queens</span> 貓掌版 🐾</h1>
+<p class="sub">每一列、每一欄、每個顏色區塊各放一個貓掌，貓掌之間不能相鄰（含斜角）</p>
+<div class="bar"><select id="size"><option value="6">6×6</option><option value="7" selected>7×7</option><option value="8">8×8</option></select>
+<button class="primary" id="new">新題目</button></div>
+<div class="wrap"><div class="board" id="board"></div>
+<div class="win" id="win"><h2>🎉 完成！</h2><button class="primary" id="again">再玩一題</button></div></div>
+<div class="bar"><button id="undo">↶ 復原</button><button id="clear">清除</button><button id="hint">💡 提示</button></div>
+<p class="sub">點一下：✕ → 貓掌 → 空白；拖曳可連續標記 ✕</p>
+</div>
+<script>
+// ===== Generator & solver =====
+function rnd(n){return Math.floor(Math.random()*n)}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=rnd(i+1);[a[i],a[j]]=[a[j],a[i]]}return a}
+function randPerm(N){ // col of paw in each row, |p[r]-p[r+1]|>1
+  const p=[],used=new Array(N).fill(false);
+  (function bt(r){if(r===N)return true;for(const c of shuffle([...Array(N).keys()])){if(used[c]||(r&&Math.abs(p[r-1]-c)<2))continue;used[c]=true;p[r]=c;if(bt(r+1))return true;used[c]=false}return false})(0);
+  return p;
+}
+function grow(N,perm){
+  const reg=new Array(N*N).fill(-1),front=[];
+  perm.forEach((c,r)=>{reg[r*N+c]=r;front.push(r*N+c)});
+  let left=N*N-N;
+  while(left){ // pick random frontier cell, expand to random empty neighbor
+    const i=rnd(front.length),c=front[i],ns=[];
+    const r=Math.floor(c/N),k=c%N;
+    if(r>0&&reg[c-N]<0)ns.push(c-N);if(r<N-1&&reg[c+N]<0)ns.push(c+N);if(k>0&&reg[c-1]<0)ns.push(c-1);if(k<N-1&&reg[c+1]<0)ns.push(c+1);
+    if(!ns.length){front.splice(i,1);continue}
+    const n=ns[rnd(ns.length)];reg[n]=reg[c];front.push(n);left--;
+  }
+  return reg;
+}
+function solve(N,reg,limit){ // returns array of solutions (perms), up to limit
+  const sols=[],cu=new Array(N).fill(false),ru=new Array(N).fill(false),p=[];
+  (function bt(r){if(sols.length>=limit)return;if(r===N){sols.push(p.slice());return}
+    for(let c=0;c<N;c++){const g=reg[r*N+c];if(cu[c]||ru[g]||(r&&Math.abs(p[r-1]-c)<2))continue;
+      cu[c]=ru[g]=true;p[r]=c;bt(r+1);cu[c]=ru[g]=false}})(0);
+  return sols;
+}
+function generate(N){
+  for(let t=1;;t++){const perm=randPerm(N),reg=grow(N,perm);if(solve(N,reg,2).length===1)return{N,reg,sol:perm,tries:t}}
+}
+if(typeof module!=='undefined')module.exports={generate,solve};
+// ===== UI =====
+if(typeof document!=='undefined'){
+const COLORS=['#f7c6c7','#c9e4ff','#d4f0c4','#ffe7a8','#e2d1f9','#ffd2b0','#bfeee8','#f3c9e8'];
+const PAW='<svg viewBox="0 0 100 100"><ellipse cx="50" cy="66" rx="22" ry="18" fill="#2b2b2b"/><ellipse cx="22" cy="40" rx="9" ry="12" transform="rotate(-25 22 40)" fill="#2b2b2b"/><ellipse cx="40" cy="25" rx="9" ry="12" transform="rotate(-8 40 25)" fill="#2b2b2b"/><ellipse cx="60" cy="25" rx="9" ry="12" transform="rotate(8 60 25)" fill="#2b2b2b"/><ellipse cx="78" cy="40" rx="9" ry="12" transform="rotate(25 78 40)" fill="#2b2b2b"/></svg>';
+const $=id=>document.getElementById(id),B=$('board');
+let pz,st,hist,done,cells,down=null,dragged=false;
+function newGame(){const N=+$('size').value;pz=generate(N);st=new Array(N*N).fill(0);hist=[];done=false;$('win').classList.remove('show');build();render()}
+function build(){const{N,reg}=pz;B.innerHTML='';B.style.gridTemplateColumns=B.style.gridTemplateRows=`repeat(${N},minmax(0,1fr))`;cells=[];
+  for(let i=0;i<N*N;i++){const d=document.createElement('div'),r=Math.floor(i/N),k=i%N;d.className='cell';d.style.background=COLORS[reg[i]];
+    if(r>0&&reg[i-N]!==reg[i])d.classList.add('bt');if(r<N-1&&reg[i+N]!==reg[i])d.classList.add('bb');
+    if(k>0&&reg[i-1]!==reg[i])d.classList.add('bl');if(k<N-1&&reg[i+1]!==reg[i])d.classList.add('br');
+    d.dataset.i=i;B.appendChild(d);cells.push(d)}}
+function conflicts(){const{N,reg}=pz,q=[],bad=new Set();st.forEach((v,i)=>v===2&&q.push(i));
+  for(let a=0;a<q.length;a++)for(let b=a+1;b<q.length;b++){const i=q[a],j=q[b],ri=Math.floor(i/N),rj=Math.floor(j/N),ki=i%N,kj=j%N;
+    if(ri===rj||ki===kj||reg[i]===reg[j]||(Math.abs(ri-rj)<2&&Math.abs(ki-kj)<2)){bad.add(i);bad.add(j)}}return{q,bad}}
+function render(){const{q,bad}=conflicts();cells.forEach((d,i)=>{d.innerHTML=st[i]===1?'<svg class="x" viewBox="0 0 10 10"><path d="M2 2L8 8M8 2L2 8" stroke="rgba(0,0,0,.45)" stroke-width="1.4" stroke-linecap="round"/></svg>':st[i]===2?PAW:'';d.classList.toggle('bad',bad.has(i))});
+  if(q.length===pz.N&&!bad.size){done=true;try{parent.postMessage({officeSolve:'queens'},parent.location.origin)}catch(e){}setTimeout(()=>$('win').classList.add('show'),300)}}
+function save(){hist.push(st.slice());if(hist.length>300)hist.shift()}
+function idxAt(e){const el=document.elementFromPoint(e.clientX,e.clientY);const c=el&&el.closest&&el.closest('.cell');return c?+c.dataset.i:-1}
+B.addEventListener('pointerdown',e=>{if(done)return;const i=idxAt(e);if(i<0)return;e.preventDefault();down=i;dragged=false;B.setPointerCapture(e.pointerId)});
+B.addEventListener('pointermove',e=>{if(down===null)return;const i=idxAt(e);if(i<0)return;
+  if(!dragged&&i!==down){dragged=true;save();if(st[down]===0)st[down]=1}
+  if(dragged&&st[i]===0){st[i]=1;render()}});
+B.addEventListener('pointerup',()=>{if(down===null)return;if(!dragged){save();st[down]=(st[down]+1)%3;render()}down=null});
+B.addEventListener('pointercancel',()=>down=null);
+$('undo').onclick=()=>{if(done||!hist.length)return;st=hist.pop();render()};
+$('clear').onclick=()=>{if(done)return;save();st.fill(0);render()};
+$('hint').onclick=()=>{if(done)return;const N=pz.N;let t=-1;
+  for(let i=0;i<N*N;i++)if(st[i]===2&&pz.sol[Math.floor(i/N)]!==i%N){t=i;break} // wrong paw first
+  if(t<0){const m=[...Array(N).keys()].filter(r=>st[r*N+pz.sol[r]]!==2);if(!m.length)return;const r=m[rnd(m.length)];t=r*N+pz.sol[r]}
+  save();st[t]=st[t]===2?0:2;render();cells[t].classList.remove('hint');void cells[t].offsetWidth;cells[t].classList.add('hint')};
+$('new').onclick=newGame;$('again').onclick=newGame;$('size').onchange=newGame;newGame();
+}
+</script></body></html>

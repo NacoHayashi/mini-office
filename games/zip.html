@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Zip 一筆連線</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;background:#f4f2ee;color:#1d1d1d;display:flex;justify-content:center;min-height:100vh}
+.app{width:100%;max-width:520px;padding:16px;display:flex;flex-direction:column;gap:12px}
+h1{margin:0;font-size:28px;text-align:center}h1 span{color:#0a66c2}
+.sub{text-align:center;color:#666;font-size:14px;margin:0}
+.bar{display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap}
+select,button{font:inherit;font-size:15px;padding:8px 14px;border-radius:999px;border:1.5px solid #0a66c2;background:#fff;color:#0a66c2;cursor:pointer}
+button.primary{background:#0a66c2;color:#fff}button:active{transform:scale(.96)}
+.board{position:relative;width:100%;aspect-ratio:1;background:#fff;border-radius:18px;box-shadow:0 2px 10px rgba(0,0,0,.08);padding:8px;touch-action:none;user-select:none}
+canvas{width:100%;height:100%;display:block}
+.win{display:none;position:absolute;inset:0;background:rgba(255,255,255,.88);border-radius:18px;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center}
+.win.show{display:flex}.win h2{margin:0;font-size:30px}.win p{margin:0;font-size:18px}
+.msg{text-align:center;min-height:22px;color:#b24020;font-size:14px}
+</style></head><body><div class="app">
+<h1><span>Zip</span> 一筆連線</h1>
+<p class="sub">從 1 開始依序連到最後一個數字，並填滿每一格</p>
+<div class="bar"><select id="size"><option value="5">5×5</option><option value="6" selected>6×6</option><option value="7">7×7</option></select><button class="primary" id="new">新題目</button></div>
+<div class="board" id="board"><canvas id="cv"></canvas>
+<div class="win" id="win"><h2>🎉 完成！</h2><button class="primary" id="again">再玩一題</button></div></div>
+<div class="bar"><button id="undo">↶ 復原</button><button id="clear">清除</button></div>
+<div class="msg" id="msg"></div>
+</div>
+<script>
+// ===== Generator (shared with node test) =====
+function rnd(n){return Math.floor(Math.random()*n)}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=rnd(i+1);[a[i],a[j]]=[a[j],a[i]]}return a}
+function nbrs(N,c){const r=Math.floor(c/N),k=c%N,o=[];if(r>0)o.push(c-N);if(r<N-1)o.push(c+N);if(k>0)o.push(c-1);if(k<N-1)o.push(c+1);return o}
+function hamPath(N){ // snake + backbite
+  let p=[];for(let r=0;r<N;r++)for(let k=0;k<N;k++)p.push(r*N+(r%2?N-1-k:k));
+  const iters=N*N*N*12;
+  for(let t=0;t<iters;t++){
+    if(Math.random()<.5)p.reverse();
+    const end=p[p.length-1],ns=nbrs(N,end),nb=ns[rnd(ns.length)];
+    const i=p.indexOf(nb);if(i===p.length-2)continue;
+    const tail=p.slice(i+1).reverse();p=p.slice(0,i+1).concat(tail);
+  }
+  if(Math.random()<.5)p.reverse();return p;
+}
+function wallsFor(N,path){ // random walls on edges not used by path
+  const used=new Set();for(let i=1;i<path.length;i++){const a=Math.min(path[i],path[i-1]),b=Math.max(path[i],path[i-1]);used.add(a+','+b)}
+  const cand=[];for(let c=0;c<N*N;c++)for(const d of nbrs(N,c))if(d>c&&!used.has(c+','+d))cand.push(c+','+d);
+  shuffle(cand);return cand.slice(0,Math.random()<.5?0:rnd(N)+1);
+}
+function generate(N){
+  const path=hamPath(N),L=path.length,K=Math.min(L,2+6+rnd(5)+(N-5));
+  const idx=new Set([0,L-1]);
+  // spread checkpoints roughly evenly with jitter
+  const seg=(L-1)/(K-1);
+  for(let j=1;j<K-1;j++){let x=Math.round(j*seg+(Math.random()-.5)*seg*.6);x=Math.max(1,Math.min(L-2,x));while(idx.has(x))x=x<L-2?x+1:1;idx.add(x)}
+  const sorted=[...idx].sort((a,b)=>a-b),nums={};sorted.forEach((x,i)=>nums[path[x]]=i+1);
+  return{N,path,nums,K:sorted.length,walls:wallsFor(N,path)};
+}
+function validate(pz,p){ // p = player/solution path
+  const{N,nums,K,walls}=pz,ws=new Set(walls);if(p.length!==N*N||new Set(p).size!==N*N)return false;
+  let next=1;for(let i=0;i<p.length;i++){
+    if(i){const a=p[i-1],b=p[i];if(!nbrs(N,a).includes(b))return false;if(ws.has(Math.min(a,b)+','+Math.max(a,b)))return false}
+    if(nums[p[i]]){if(nums[p[i]]!==next)return false;next++}
+  }
+  return next===K+1&&nums[p[0]]===1&&nums[p[p.length-1]]===K;
+}
+if(typeof module!=='undefined'){module.exports={generate,validate};}
+// ===== UI =====
+if(typeof document!=='undefined'){
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d'),board=document.getElementById('board');
+let pz,path=[],hist=[],done=false,drag=false,wset;
+const $=id=>document.getElementById(id);
+function newGame(){pz=generate(+$('size').value);wset=new Set(pz.walls);const s=Object.keys(pz.nums).find(c=>pz.nums[c]===1);path=[+s];hist=[];done=false;$('win').classList.remove('show');$('msg').textContent='';draw()}
+function resize(){const r=cv.getBoundingClientRect(),d=devicePixelRatio||1;cv.width=r.width*d;cv.height=r.height*d;draw()}
+function center(c,s){return[(c%pz.N+.5)*s,(Math.floor(c/pz.N)+.5)*s]}
+function draw(){if(!pz)return;const W=cv.width,N=pz.N,s=W/N;ctx.clearRect(0,0,W,W);
+  ctx.strokeStyle='#e3e0da';ctx.lineWidth=W*.004;
+  for(let i=1;i<N;i++){ctx.beginPath();ctx.moveTo(i*s,0);ctx.lineTo(i*s,W);ctx.moveTo(0,i*s);ctx.lineTo(W,i*s);ctx.stroke()}
+  // path
+  if(path.length>1){ctx.lineCap='round';ctx.lineJoin='round';ctx.lineWidth=s*.42;
+    for(let i=1;i<path.length;i++){const[a,b]=center(path[i-1],s),[c,d]=center(path[i],s);
+      const h=200+150*(i/(N*N));ctx.strokeStyle=`hsl(${h%360},85%,58%)`;ctx.beginPath();ctx.moveTo(a,b);ctx.lineTo(c,d);ctx.stroke()}}
+  else if(path.length){const[a,b]=center(path[0],s);ctx.fillStyle='hsl(200,85%,58%)';ctx.beginPath();ctx.arc(a,b,s*.21,0,7);ctx.fill()}
+  // walls
+  ctx.strokeStyle='#1d1d1d';ctx.lineWidth=s*.09;ctx.lineCap='round';
+  for(const w of pz.walls){const[a,b]=w.split(',').map(Number);const r=Math.floor(a/N),k=a%N;ctx.beginPath();
+    if(b===a+1){ctx.moveTo((k+1)*s,r*s);ctx.lineTo((k+1)*s,(r+1)*s)}else{ctx.moveTo(k*s,(r+1)*s);ctx.lineTo((k+1)*s,(r+1)*s)}ctx.stroke()}
+  // numbers
+  for(const c in pz.nums){const[x,y]=center(+c,s);ctx.fillStyle='#1d1d1d';ctx.beginPath();ctx.arc(x,y,s*.3,0,7);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font=`700 ${s*.3}px sans-serif`;ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(pz.nums[c],x,y+s*.01)}
+}
+function cellAt(e){const r=cv.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top,N=pz.N;
+  const k=Math.floor(x/r.width*N),q=Math.floor(y/r.height*N);return k<0||q<0||k>=N||q>=N?-1:q*N+k}
+function lastNum(){let m=0;for(const c of path)if(pz.nums[c])m=pz.nums[c];return m}
+function tryMove(c){if(done||c<0)return;const end=path[path.length-1];if(c===end)return;
+  const i=path.indexOf(c);if(i>=0){path=path.slice(0,i+1);draw();return}
+  if(!nbrs(pz.N,end).includes(c)||wset.has(Math.min(c,end)+','+Math.max(c,end)))return;
+  if(pz.nums[c]&&pz.nums[c]!==lastNum()+1)return;
+  path.push(c);draw();check()}
+function check(){if(path.length===pz.N*pz.N){if(validate(pz,path)){done=true;try{parent.postMessage({officeSolve:'zip'},parent.location.origin)}catch(e){}setTimeout(()=>$('win').classList.add('show'),250)}else $('msg').textContent='要以最大的數字結尾喔！'}else $('msg').textContent=''}
+cv.addEventListener('pointerdown',e=>{if(done)return;hist.push(path.slice());if(hist.length>200)hist.shift();drag=true;cv.setPointerCapture(e.pointerId);const c=cellAt(e);
+  if(c===path[0]&&path.length>1){path=[path[0]];draw()}else tryMove(c)});
+cv.addEventListener('pointermove',e=>{if(!drag)return;const c=cellAt(e);if(c<0)return;
+  const end=path[path.length-1];// fill skipped cells on fast drags in straight line
+  const N=pz.N,er=Math.floor(end/N),ek=end%N,cr=Math.floor(c/N),ck=c%N;
+  if((er===cr||ek===ck)&&path.indexOf(c)<0){const st=er===cr?(ck>ek?1:-1):(cr>er?N:-N);let x=end;while(x!==c){const b=path.length;tryMove(x+st);if(path.length===b)break;x+=st}}else tryMove(c)});
+['pointerup','pointercancel'].forEach(t=>cv.addEventListener(t,()=>{drag=false;const h=hist[hist.length-1];if(h&&h.join()===path.join())hist.pop()}));
+$('undo').onclick=()=>{if(done)return;if(hist.length)path=hist.pop();else if(path.length>1)path.pop();draw();$('msg').textContent=''};
+$('clear').onclick=()=>{if(done)return;hist.push(path.slice());path=[path[0]];draw()};
+$('new').onclick=newGame;$('again').onclick=newGame;$('size').onchange=newGame;
+addEventListener('resize',resize);newGame();resize();
+}
+</script></body></html>

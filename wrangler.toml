@@ -1,0 +1,35 @@
+name = "mini-office"
+main = "src/index.ts"
+compatibility_date = "2026-10-12"
+
+# Dashboard plain-text vars are deleted on `wrangler deploy` unless this is set.
+# Set APP_SEED and APP_SLUG via `wrangler secret put`, not in [vars]: a var of
+# the same name replaces the secret on deploy.
+keep_vars = true
+
+# Files in ./panel are bundled into the Worker as text.
+[[rules]]
+type = "Text"
+globs = ["**/panel/index.html", "**/panel/panel.css", "**/panel/panel.js"]
+fallthrough = true
+
+# The lobby and the office client are static files in ./public.
+# Only /api/* is handled by the Worker (Durable Object + WebSocket). Paths with
+# no static file (the management page) also reach the Worker.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*", "/office", "/office/"]
+
+[[durable_objects.bindings]]
+name = "OFFICE"
+class_name = "OfficeRoom"
+
+# Applied on the first `wrangler deploy`. Free plan only allows SQLite-backed
+# Durable Objects (not the legacy key-value backend).
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["OfficeRoom"]
+
+[observability]
+enabled = true

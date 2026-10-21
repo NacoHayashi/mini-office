@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>2048 貓咪進化</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0}
+body{font-family:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;background:#fbf3ea;color:#5a4636;display:flex;justify-content:center;min-height:100vh;overscroll-behavior:none}
+.app{width:100%;max-width:500px;padding:14px;display:flex;flex-direction:column;gap:12px}
+.head{display:flex;align-items:center;gap:8px}h1{margin:0;font-size:26px;flex:1;color:#c0703a}h1 small{display:block;font-size:13px;font-weight:400;color:#a08672}
+.sc{background:#e9d6c3;border-radius:12px;padding:4px 12px;text-align:center;min-width:72px}.sc .k{font-size:12px;color:#8a6c55}.sc .v{font-size:20px;font-weight:800;color:#fff;text-shadow:0 1px 0 #b08a6a;font-variant-numeric:tabular-nums}
+.bar{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+button{font:inherit;font-size:15px;padding:8px 16px;border-radius:999px;border:0;background:#fff;color:#c0703a;cursor:pointer;box-shadow:0 2px 0 #e2c6ab;touch-action:manipulation}
+button.primary{background:#e8935a;color:#fff;box-shadow:0 2px 0 #b8683a}button:disabled{opacity:.4;cursor:default}button:active:not(:disabled){transform:translateY(2px);box-shadow:none}
+.board{position:relative;width:100%;aspect-ratio:1;background:#d9bfa6;border-radius:16px;touch-action:none;user-select:none;-webkit-user-select:none;overflow:hidden}
+.slot,.tile{position:absolute;left:2%;top:2%;width:22.5%;height:22.5%;border-radius:12px}
+.slot{background:rgba(255,255,255,.35)}
+.tile{transition:transform .11s ease-in-out;will-change:transform;z-index:1}
+.tile .in{position:absolute;inset:0;border-radius:12px;overflow:hidden;box-shadow:0 2px 0 rgba(0,0,0,.08);background:#fff7ea}
+.tile .in img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:12px;pointer-events:none}
+.tile.glow .in{box-shadow:0 0 0 3px #e8b423,0 0 14px 3px rgba(255,196,60,.95)}
+.tile .num{position:absolute;right:6%;bottom:5%;z-index:2;font-size:min(3.2vw,14px);font-weight:800;line-height:1;padding:2px 5px;border-radius:8px;background:rgba(255,255,255,.88);color:#7a5236}
+.tile.new .in{animation:appear .18s ease-out}.tile.merged{z-index:2}.tile.merged .in{animation:pop .2s ease-out}
+@keyframes appear{from{transform:scale(0)}}@keyframes pop{50%{transform:scale(1.14)}}
+.ov{position:fixed;inset:0;background:rgba(80,50,30,.45);display:none;align-items:center;justify-content:center;z-index:9;padding:16px}.ov.show{display:flex}
+.card{background:#fff;border-radius:20px;padding:20px;text-align:center;max-width:460px;width:100%;max-height:90vh;overflow:auto}
+.card h2{margin:0 0 10px;font-size:28px;color:#c0703a}.card p{margin:0 0 14px}
+.dex{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:10px 0 16px}
+.dex div{border-radius:12px;padding:6px;font-size:13px;display:flex;flex-direction:column;align-items:center;gap:2px;background:#fff7ea}
+.dex img{width:100%;aspect-ratio:1;height:auto;object-fit:cover;border-radius:10px}
+.dex .lock{background:#eee!important;color:#aaa}.dex .lock img{filter:grayscale(1) brightness(.4)}
+.dex .glow{box-shadow:0 0 0 3px #e8b423,0 0 10px rgba(255,196,60,.85)}
+.hint{text-align:center;font-size:13px;color:#a08672;margin:0}
+</style></head><body><div class="app">
+<div class="head"><h1>2048 貓咪進化<small id="stageName">合併相同的貓咪，養出黃金星貓！</small></h1>
+<div class="sc"><div class="k">分數</div><div class="v" id="score">0</div></div><div class="sc"><div class="k">最高</div><div class="v" id="best">0</div></div></div>
+<div class="bar"><button class="primary" id="new">新遊戲</button><button id="undo" disabled>↶ 復原</button><button id="dexBtn">📖 貓咪圖鑑</button></div>
+<div class="board" id="board"></div>
+<p class="hint">滑動或用方向鍵／WASD 移動</p>
+</div>
+<div class="ov" id="ov"><div class="card"><h2 id="ovT"></h2><p id="ovP"></p><div class="bar" id="ovB"></div></div></div>
+<div class="ov" id="dexOv"><div class="card"><h2>📖 貓咪圖鑑</h2><div class="dex" id="dex"></div><button class="primary" id="dexClose">關閉</button></div></div>
+<script>
+// ===== pure logic =====
+const DIRS={left:[0,-1],right:[0,1],up:[-1,0],down:[1,0]};
+function lines(dir){const L=[];for(let i=0;i<4;i++){const l=[];for(let j=0;j<4;j++){
+  l.push(dir==='left'?[i,j]:dir==='right'?[i,3-j]:dir==='up'?[j,i]:[3-j,i])}L.push(l)}return L}
+let nextId=1;
+// tiles: [{id,v,r,c}] -> {tiles, moved, gained, anim:[{id,r,c}], dying:[ids], born:[ids]}
+function operate(tiles,dir){const at={};tiles.forEach(t=>at[t.r*4+t.c]=t);const out=[],anim=[],dying=[],born=[];let moved=false,gained=0;
+  for(const l of lines(dir)){let k=0,last=null;
+    for(const [r,c] of l){const t=at[r*4+c];if(!t)continue;
+      if(last&&!last.merged&&last.v===t.v){const [tr,tc]=l[k-1];anim.push({id:t.id,r:tr,c:tc});dying.push(t.id,last.id);
+        const nt={id:nextId++,v:t.v*2,r:tr,c:tc,merged:true};out[out.indexOf(last)]=nt;born.push(nt.id);gained+=nt.v;moved=true;last=nt}
+      else{const [tr,tc]=l[k];if(tr!==r||tc!==c)moved=true;anim.push({id:t.id,r:tr,c:tc});const nt={id:t.id,v:t.v,r:tr,c:tc};out.push(nt);last=nt;k++}}}
+  out.forEach(t=>delete t.merged);return{tiles:out,moved,gained,anim,dying,born}}
+function canMove(tiles){if(tiles.length<16)return true;const g={};tiles.forEach(t=>g[t.r*4+t.c]=t.v);
+  for(let r=0;r<4;r++)for(let c=0;c<4;c++){if(c<3&&g[r*4+c]===g[r*4+c+1])return true;if(r<3&&g[r*4+c]===g[(r+1)*4+c])return true}return false}
+function spawn(tiles){const used=new Set(tiles.map(t=>t.r*4+t.c)),free=[];for(let i=0;i<16;i++)if(!used.has(i))free.push(i);if(!free.length)return null;
+  const p=free[Math.floor(Math.random()*free.length)];const t={id:nextId++,v:Math.random()<.9?2:4,r:Math.floor(p/4),c:p%4};tiles.push(t);return t}
+if(typeof module!=='undefined')module.exports={operate,canMove,spawn};
+// ===== cats =====
+// Absolute paths: this game runs inside a srcdoc iframe on /games and in the arcade overlay.
+const CAT='/games/cat2048/';
+const STAGES=[
+{v:2,n:'橘貓',file:'01_orange_cat.webp'},
+{v:4,n:'白貓',file:'02_white_cat.webp'},
+{v:8,n:'灰虎斑',file:'03_gray_tabby.webp'},
+{v:16,n:'三花貓',file:'04_calico_cat.webp'},
+{v:32,n:'黑貓',file:'05_black_cat.webp'},
+{v:64,n:'蝴蝶結貓',file:'06_bow_cat.webp'},
+{v:128,n:'微笑貓',file:'07_smile_cat.webp'},
+{v:256,n:'皇冠貓',file:'08_crown_cat.webp'},
+{v:512,n:'月亮貓',file:'09_moon_cat.webp'},
+{v:1024,n:'星星貓',file:'10_star_cat.webp'},
+{v:2048,n:'黃金星貓',file:'10_star_cat.webp',glow:1}];
+function stageOf(v){let s=STAGES[0];for(const x of STAGES)if(v>=x.v)s=x;return s}
+function catImg(s){return `<img alt="" draggable="false" src="${CAT}${s.file}">`}
+if(typeof document!=='undefined'){
+// ===== storage =====
+const KEY='cat2048';let save={best:0,max:2};
+try{const d=JSON.parse(localStorage.getItem(KEY));if(d)save=Object.assign(save,d)}catch(e){}
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(save))}catch(e){}try{if(parent!==window)parent.postMessage({lobbySave:{key:KEY,val:save}},parent.location.origin)}catch(e){}}
+addEventListener('message',e=>{const d=e.data&&e.data.lobbyData;if(d&&d.key===KEY&&d.val){save.best=Math.max(save.best,d.val.best||0);save.max=Math.max(save.max,d.val.max||2);hud()}});
+try{if(parent!==window)parent.postMessage({lobbyLoad:KEY},parent.location.origin)}catch(e){}
+// ===== UI =====
+const $=id=>document.getElementById(id),B=$('board');let tiles=[],score=0,prev=null,anim=false,won=false,keepGoing=false;const els=new Map();
+for(let i=0;i<16;i++){const s=document.createElement('div');s.className='slot';s.style.transform=pos(Math.floor(i/4),i%4);B.appendChild(s)}
+function pos(r,c){return`translate(${c*108.889}%,${r*108.889}%)`}
+function mk(t,cls){const s=stageOf(t.v),el=document.createElement('div');el.className='tile '+(cls||'')+(s.glow?' glow':'');
+  el.innerHTML=`<div class="in">${catImg(s)}<span class="num">${t.v}</span></div>`;el.title=s.n;el.style.transform=pos(t.r,t.c);B.appendChild(el);els.set(t.id,el)}
+function hud(){$('score').textContent=score;save.best=Math.max(save.best,score);$('best').textContent=save.best;$('undo').disabled=!prev||anim;
+  const mx=Math.max(2,...tiles.map(t=>t.v));if(mx>save.max){save.max=mx}$('stageName').textContent='目前最高：'+stageOf(mx).n+'（'+mx+'）'}
+function newGame(){for(const el of els.values())el.remove();els.clear();tiles=[];score=0;prev=null;won=false;keepGoing=false;
+  spawn(tiles);spawn(tiles);tiles.forEach(t=>mk(t,'new'));$('ov').classList.remove('show');hud()}
+function move(dir){if(anim||$('ov').classList.contains('show'))return;const res=operate(tiles,dir);if(!res.moved)return;
+  prev={tiles:tiles.map(t=>({...t})),score};anim=true;
+  for(const a of res.anim){const el=els.get(a.id);if(el)el.style.transform=pos(a.r,a.c)}
+  tiles=res.tiles;score+=res.gained;const nt=spawn(tiles);
+  setTimeout(()=>{for(const id of res.dying){const el=els.get(id);if(el)el.remove();els.delete(id)}
+    for(const id of res.born)mk(tiles.find(t=>t.id===id),'merged');if(nt)mk(nt,'new');anim=false;hud();persist();check()},115);hud()}
+function undo(){if(!prev||anim)return;for(const el of els.values())el.remove();els.clear();tiles=prev.tiles;score=prev.score;prev=null;tiles.forEach(t=>mk(t));$('ov').classList.remove('show');hud()}
+function overlay(t,p,btns){$('ovT').textContent=t;$('ovP').textContent=p;$('ovB').innerHTML='';btns.forEach(([txt,fn,pri])=>{const b=document.createElement('button');b.textContent=txt;if(pri)b.className='primary';b.onclick=fn;$('ovB').appendChild(b)});$('ov').classList.add('show')}
+function check(){if(!won&&!keepGoing&&tiles.some(t=>t.v>=2048)){won=true;overlay('🎉 完成！','你養出了黃金星貓！要繼續挑戰更高的貓咪嗎？',[['繼續玩',()=>{keepGoing=true;$('ov').classList.remove('show')},true],['新遊戲',newGame]]);return}
+  if(!canMove(tiles))overlay('😿 遊戲結束','分數 '+score+'，再接再厲！',[['↶ 復原',undo],['新遊戲',newGame,true]])}
+function showDex(){$('dex').innerHTML=STAGES.map(s=>{const ok=save.max>=s.v;return`<div class="${ok?'':'lock'}${s.glow?' glow':''}">${catImg(s)}<b>${ok?s.n:'？？？'}</b><span>${s.v}</span></div>`}).join('');$('dexOv').classList.add('show')}
+const KEYS={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down',a:'left',d:'right',w:'up',s:'down',A:'left',D:'right',W:'up',S:'down'};
+document.addEventListener('keydown',e=>{const d=KEYS[e.key];if(d){e.preventDefault();move(d)}});
+let sx=null,sy=null;
+B.addEventListener('pointerdown',e=>{sx=e.clientX;sy=e.clientY;try{B.setPointerCapture(e.pointerId)}catch(_){}});
+B.addEventListener('pointerup',e=>{if(sx===null)return;const dx=e.clientX-sx,dy=e.clientY-sy;sx=null;if(Math.max(Math.abs(dx),Math.abs(dy))<24)return;
+  move(Math.abs(dx)>Math.abs(dy)?(dx>0?'right':'left'):(dy>0?'down':'up'))});
+B.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});
+$('new').onclick=newGame;$('undo').onclick=undo;$('dexBtn').onclick=showDex;$('dexClose').onclick=()=>$('dexOv').classList.remove('show');
+newGame();
+}
+</script></body></html>

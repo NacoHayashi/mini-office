@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>迷你數獨</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;background:#f4f2ee;color:#1d1d1d;display:flex;justify-content:center;min-height:100vh}
+.app{width:100%;max-width:520px;padding:16px;display:flex;flex-direction:column;gap:12px}
+h1{margin:0;font-size:28px;text-align:center}h1 span{color:#0a66c2}
+.sub{text-align:center;color:#666;font-size:14px;margin:0}
+.bar{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}
+select,button{font:inherit;font-size:15px;padding:8px 14px;border-radius:999px;border:1.5px solid #0a66c2;background:#fff;color:#0a66c2;cursor:pointer;touch-action:manipulation}
+button.primary,button.on{background:#0a66c2;color:#fff}button:active{transform:scale(.96)}
+.wrap{position:relative;width:100%;aspect-ratio:1}
+.board{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));grid-template-rows:repeat(6,minmax(0,1fr));width:100%;height:100%;border:3px solid #222;border-radius:12px;overflow:hidden;background:#fff;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+.cell{position:relative;min-width:0;min-height:0;overflow:hidden;line-height:0;font-size:0;border:0;padding:0;cursor:pointer;background:#fff;
+ --b:0px;--r:0px;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.2),inset 0 calc(-1*var(--b)) 0 #222,inset calc(-1*var(--r)) 0 0 #222}
+.cell.bb{--b:2.5px}.cell.br{--r:2.5px}
+.cell.sel::after{content:'';position:absolute;inset:3px;border:2.5px solid #0a66c2;border-radius:6px;pointer-events:none}
+.cell::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:0;background:linear-gradient(110deg,transparent 20%,rgba(255,214,90,.85) 50%,transparent 80%);background-size:250% 100%}
+.cell.glow::before{animation:glow .75s ease-out forwards}
+@keyframes glow{0%{opacity:0;background-position:100% 0}25%{opacity:1}100%{opacity:0;background-position:-50% 0}}
+.cell .v{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:min(8vw,36px);line-height:1;color:#0a66c2}
+.cell.given .v{color:#1d1d1d;font-weight:700}
+.cell.bad .v{color:#d42020}.cell.bad{background-image:repeating-linear-gradient(45deg,rgba(220,30,30,.15) 0 6px,transparent 6px 12px)}
+.cell .n{position:absolute;inset:6%;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr))}
+.cell .n i{font-style:normal;display:flex;align-items:center;justify-content:center;font-size:min(3.2vw,14px);line-height:1;color:#666}
+.cell.hint{animation:pulse .9s ease 2}@keyframes pulse{50%{filter:brightness(.8)}}
+.pad{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.pad button{font-size:22px;padding:10px 0;border-radius:12px;font-weight:700}
+.win{display:none;position:absolute;inset:0;background:rgba(255,255,255,.88);border-radius:12px;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+.win.show{display:flex}.win h2{margin:0;font-size:32px}
+</style></head><body><div class="app">
+<h1><span>Mini</span> 迷你數獨</h1>
+<p class="sub">每一列、每一欄、每個 2×3 宮格都要填入 1～6</p>
+<div class="bar"><select id="diff"><option value="0">簡單</option><option value="1" selected>中等</option><option value="2">困難</option></select>
+<button class="primary" id="new">新題目</button></div>
+<div class="wrap"><div class="board" id="board"></div>
+<div class="win" id="win"><h2>🎉 完成！</h2><button class="primary" id="again">再玩一題</button></div></div>
+<div class="pad" id="pad"></div>
+<div class="bar"><button id="erase">⌫ 擦除</button><button id="notes">✏️ 筆記</button><button id="undo">↶ 復原</button><button id="clear">清除</button><button id="hint">💡 提示</button></div>
+</div>
+<script>
+// ===== Generator & solver =====
+function rnd(n){return Math.floor(Math.random()*n)}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=rnd(i+1);[a[i],a[j]]=[a[j],a[i]]}return a}
+function box(i){return Math.floor(Math.floor(i/6)/2)*2+Math.floor((i%6)/3)}
+function ok(g,i,d){const r=Math.floor(i/6),c=i%6,b=box(i);for(let j=0;j<36;j++){if(j!==i&&g[j]===d&&(Math.floor(j/6)===r||j%6===c||box(j)===b))return false}return true}
+function count(g,limit){g=g.slice();let n=0;(function bt(){if(n>=limit)return;let i=g.indexOf(0);if(i<0){n++;return}
+  for(let d=1;d<=6;d++)if(ok(g,i,d)){g[i]=d;bt();g[i]=0}})();return n}
+function fullGrid(){const g=new Array(36).fill(0);(function bt(){const i=g.indexOf(0);if(i<0)return true;for(const d of shuffle([1,2,3,4,5,6]))if(ok(g,i,d)){g[i]=d;if(bt())return true;g[i]=0}return false})();return g}
+const TARGET=[18,13,0]; // clues: 簡單/中等/困難(盡量少)
+function generate(diff){const sol=fullGrid(),p=sol.slice();let clues=36;
+  for(const i of shuffle([...Array(36).keys()])){if(clues<=TARGET[diff])break;const v=p[i];p[i]=0;if(count(p,2)===1)clues--;else p[i]=v}
+  return{sol,puzzle:p,clues}}
+if(typeof module!=='undefined')module.exports={generate,count,ok};
+// ===== UI =====
+if(typeof document!=='undefined'){
+const $=id=>document.getElementById(id),B=$('board');let pz,val,notes,hist,sel=-1,noteMode=false,done=false,cells=[];
+B.addEventListener('animationend',e=>{const c=e.target.closest('.cell');if(c&&e.animationName==='glow')c.classList.remove('glow')});
+for(let i=0;i<36;i++){const d=document.createElement('div'),r=Math.floor(i/6),c=i%6;d.className='cell'+(r===1||r===3?' bb':'')+(c===2?' br':'');d.dataset.i=i;
+  d.innerHTML='<span class="v"></span><span class="n">'+'<i></i>'.repeat(6)+'</span>';B.appendChild(d);cells.push(d)}
+for(let d=1;d<=6;d++){const b=document.createElement('button');b.textContent=d;b.onclick=()=>input(d);$('pad').appendChild(b)}
+function newGame(){pz=generate(+$('diff').value);val=pz.puzzle.slice();notes=Array.from({length:36},()=>new Set());hist=[];sel=-1;done=false;$('win').classList.remove('show');render()}
+function save(){hist.push({v:val.slice(),n:notes.map(s=>new Set(s))});if(hist.length>300)hist.shift()}
+function rel(i,j){return Math.floor(i/6)===Math.floor(j/6)||i%6===j%6||box(i)===box(j)}
+function render(){cells.forEach((d,i)=>{const v=val[i];d.querySelector('.v').textContent=v||'';
+  const ns=d.querySelectorAll('.n i');ns.forEach((e,k)=>e.textContent=!v&&notes[i].has(k+1)?k+1:'');
+  d.classList.toggle('given',!!pz.puzzle[i]);d.classList.toggle('sel',i===sel);
+  
+  d.classList.toggle('bad',!!v&&!ok(val,i,v))});
+  if(val.every((v,i)=>v&&ok(val,i,v))){done=true;try{parent.postMessage({officeSolve:'sudoku'},parent.location.origin)}catch(e){}setTimeout(()=>$('win').classList.add('show'),300)}}
+function groups(){const g=[];for(let k=0;k<6;k++){g.push([...Array(6)].map((_,j)=>k*6+j));g.push([...Array(6)].map((_,j)=>j*6+k))}
+  for(let b=0;b<6;b++)g.push([...Array(36).keys()].filter(i=>box(i)===b));return g}
+const GROUPS=groups();
+function full(gr){return gr.every(i=>val[i]&&ok(val,i,val[i]))}
+function glowNew(before){const lit=new Set();GROUPS.forEach((gr,k)=>{if(!before[k]&&full(gr))gr.forEach(i=>lit.add(i))});
+  lit.forEach(i=>{const c=cells[i];c.classList.remove('glow');void c.offsetWidth;c.classList.add('glow');clearTimeout(c._gt);c._gt=setTimeout(()=>c.classList.remove('glow'),900)})}
+function snap(){return GROUPS.map(full)}
+function input(d){if(done||sel<0||pz.puzzle[sel])return;save();
+  if(noteMode&&!val[sel]){notes[sel].has(d)?notes[sel].delete(d):notes[sel].add(d)}
+  else{const bf=snap();val[sel]=val[sel]===d?0:d;setTimeout(()=>glowNew(bf));if(val[sel])for(let j=0;j<36;j++)if(rel(j,sel))notes[j].delete(d)}render()}
+function erase(){if(done||sel<0||pz.puzzle[sel])return;save();val[sel]=0;notes[sel].clear();render()}
+B.addEventListener('click',e=>{const c=e.target.closest('.cell');if(!c||done)return;sel=+c.dataset.i;render()});
+document.addEventListener('keydown',e=>{if(done)return;if(e.key>='1'&&e.key<='6')input(+e.key);else if(e.key==='Backspace'||e.key==='Delete'||e.key==='0')erase();
+  else if(e.key==='n'||e.key==='N')$('notes').click();
+  else{const m={ArrowUp:-6,ArrowDown:6,ArrowLeft:-1,ArrowRight:1}[e.key];if(m===undefined)return;e.preventDefault();
+    if(sel<0)sel=0;else{const r=Math.floor(sel/6),c=sel%6;if(m===-1&&c>0||m===1&&c<5||m===-6&&r>0||m===6&&r<5)sel+=m}render()}});
+$('erase').onclick=erase;$('notes').onclick=()=>{noteMode=!noteMode;$('notes').classList.toggle('on',noteMode)};
+$('undo').onclick=()=>{if(done||!hist.length)return;const h=hist.pop();val=h.v;notes=h.n;render()};
+$('clear').onclick=()=>{if(done)return;save();val=pz.puzzle.slice();notes.forEach(s=>s.clear());render()};
+$('hint').onclick=()=>{if(done)return;let t=val.findIndex((v,i)=>v&&v!==pz.sol[i]);
+  if(t<0){const e=[...Array(36).keys()].filter(i=>!val[i]);if(!e.length)return;t=sel>=0&&!val[sel]?sel:e[rnd(e.length)]}
+  save();const bf=snap();val[t]=pz.sol[t];sel=t;render();glowNew(bf);cells[t].classList.remove('hint');void cells[t].offsetWidth;cells[t].classList.add('hint')};
+$('new').onclick=newGame;$('again').onclick=newGame;$('diff').onchange=newGame;newGame();
+}
+</script></body></html>

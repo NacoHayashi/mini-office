@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Patches 拼布</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;background:#f4f2ee;color:#1d1d1d;display:flex;justify-content:center;min-height:100vh}
+.app{width:100%;max-width:520px;padding:16px;display:flex;flex-direction:column;gap:12px}
+h1{margin:0;font-size:28px;text-align:center}h1 span{color:#0a66c2}
+.sub{text-align:center;color:#666;font-size:14px;margin:0;line-height:1.5}
+.bar{display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}
+select,button{font:inherit;font-size:15px;padding:8px 14px;border-radius:999px;border:1.5px solid #0a66c2;background:#fff;color:#0a66c2;cursor:pointer;touch-action:manipulation}
+button.primary{background:#0a66c2;color:#fff}button:active{transform:scale(.96)}
+.wrap{position:relative;width:100%;aspect-ratio:1;border:3px solid #222;border-radius:12px;overflow:hidden;background:#fff;touch-action:none;user-select:none;-webkit-user-select:none}
+.board,.layer{position:absolute;inset:0;display:grid}
+.layer{pointer-events:none}
+.cell{position:relative;min-width:0;min-height:0;overflow:hidden;box-shadow:inset 0 0 0 .5px rgba(0,0,0,.15)}
+.patch{position:relative;min-width:0;min-height:0;margin:3px;border-radius:8px;border:2.5px solid rgba(0,0,0,.55)}
+.patch.bad{border:2.5px dashed #d42020;background-image:repeating-linear-gradient(45deg,rgba(220,30,30,.18) 0 6px,transparent 6px 12px)!important}
+.patch.preview{border:2.5px dashed #0a66c2;background:rgba(10,102,194,.15)}
+.patch.hint{animation:pulse .9s ease 2}@keyframes pulse{50%{filter:brightness(.8)}}
+.clue{position:relative;min-width:0;min-height:0}
+.clue svg{position:absolute;left:50%;top:50%;width:76%;height:76%;transform:translate(-50%,-50%)}
+.win{display:none;position:absolute;inset:0;background:rgba(255,255,255,.88);flex-direction:column;align-items:center;justify-content:center;gap:14px;z-index:5}
+.win.show{display:flex}.win h2{margin:0;font-size:32px}
+.legend{display:flex;gap:14px;justify-content:center;flex-wrap:wrap;font-size:13px;color:#555}
+.legend span{display:flex;align-items:center;gap:4px}.legend svg{width:22px;height:22px}
+</style></head><body><div class="app">
+<h1><span>Patches</span> 拼布</h1>
+<p class="sub">把網格切成長方形，每塊恰好包含一個提示，並符合提示的格數與形狀，不得重疊、填滿全部格子</p>
+<div class="bar"><select id="size"><option value="5">5×5</option><option value="6" selected>6×6</option><option value="7">7×7</option></select>
+<button class="primary" id="new">新題目</button></div>
+<div class="wrap" id="wrap"><div class="board" id="board"></div><div class="layer" id="layer"></div><div class="layer" id="clues"></div>
+<div class="win" id="win"><h2>🎉 完成！</h2><button class="primary" id="again">再玩一題</button></div></div>
+<div class="bar"><button id="undo">↶ 復原</button><button id="clear">清除</button><button id="hint">💡 提示</button></div>
+<div class="legend" id="legend"></div>
+<p class="sub">拖曳畫出長方形；點一下已畫的區塊可刪除</p>
+</div>
+<script>
+// ===== Generator & solver =====
+// shapes: 'sq' square, 'w' wide (w>h), 't' tall (h>w), 'f' free. clue: {r,c,shape,n|null}
+function rnd(n){return Math.floor(Math.random()*n)}
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=rnd(i+1);[a[i],a[j]]=[a[j],a[i]]}return a}
+function shapeOf(w,h){return w===h?'sq':w>h?'w':'t'}
+function partition(N){const cov=new Array(N*N).fill(false),rects=[];const maxA=N<=5?6:8;
+  for(let i=0;i<N*N;i++){if(cov[i])continue;const r=Math.floor(i/N),c=i%N;let mw=0;while(c+mw<N&&!cov[r*N+c+mw])mw++;
+    const opts=[];for(let w=1;w<=mw;w++)for(let h=1;r+h<=N;h++){let okk=true;for(let x=0;x<w;x++)if(cov[(r+h-1)*N+c+x])okk=false;if(!okk)break;
+      const a=w*h;if(a>maxA)break;opts.push({w,h,wt:a===1?.15:a===2?.6:1})}
+    let s=opts.reduce((a,o)=>a+o.wt,0)*Math.random(),o=opts[0];for(const q of opts){s-=q.wt;if(s<=0){o=q;break}}
+    for(let y=0;y<o.h;y++)for(let x=0;x<o.w;x++)cov[(r+y)*N+c+x]=true;rects.push({r,c,w:o.w,h:o.h})}
+  return rects}
+function fits(cl,w,h){return(cl.n==null||w*h===cl.n)&&(cl.shape==='f'||shapeOf(w,h)===cl.shape)}
+function candidates(N,clues){const at=new Map();clues.forEach((q,k)=>at.set(q.r*N+q.c,k));
+  return clues.map((q,k)=>{const out=[];for(let r=0;r<=q.r;r++)for(let c=0;c<=q.c;c++)for(let h=q.r-r+1;r+h<=N;h++)for(let w=q.c-c+1;c+w<=N;w++){
+    if(!fits(q,w,h))continue;let okk=true;for(let y=0;y<h&&okk;y++)for(let x=0;x<w;x++){const j=at.get((r+y)*N+c+x);if(j!==undefined&&j!==k){okk=false;break}}
+    if(okk)out.push({r,c,w,h,k})}return out})}
+function solve(N,clues,limit){const cand=candidates(N,clues),byCell=Array.from({length:N*N},()=>[]);
+  cand.forEach(l=>l.forEach(o=>{for(let y=0;y<o.h;y++)for(let x=0;x<o.w;x++)byCell[(o.r+y)*N+o.c+x].push(o)}));
+  const cov=new Array(N*N).fill(false),used=new Array(clues.length).fill(false),cur=[],sols=[];
+  (function bt(){if(sols.length>=limit)return;const i=cov.indexOf(false);if(i<0){sols.push(cur.slice());return}
+    for(const o of byCell[i]){if(used[o.k])continue;let okk=true;for(let y=0;y<o.h&&okk;y++)for(let x=0;x<o.w;x++)if(cov[(o.r+y)*N+o.c+x]){okk=false;break}
+      if(!okk)continue;const set=v=>{for(let y=0;y<o.h;y++)for(let x=0;x<o.w;x++)cov[(o.r+y)*N+o.c+x]=v};set(true);used[o.k]=true;cur.push(o);bt();cur.pop();used[o.k]=false;set(false)}})();
+  return sols}
+function generate(N){for(let t=1;;t++){const rects=shuffle(partition(N));
+  const clues=rects.map(R=>({r:R.r+rnd(R.h),c:R.c+rnd(R.w),shape:shapeOf(R.w,R.h),n:R.w*R.h}));
+  if(solve(N,clues,2).length!==1)continue;
+  // weaken some clues (hide number or shape) while keeping uniqueness
+  for(const k of shuffle([...clues.keys()]).slice(0,Math.ceil(clues.length*.45))){const q=clues[k],old={shape:q.shape,n:q.n};
+    if(Math.random()<.5&&q.shape!=='sq')q.n=null;else q.shape='f';
+    if(solve(N,clues,2).length!==1){q.shape=old.shape;q.n=old.n}}
+  return{N,clues,sol:rects.map(R=>{const k=clues.findIndex(q=>q.r>=R.r&&q.r<R.r+R.h&&q.c>=R.c&&q.c<R.c+R.w);return{...R,k}}),tries:t}}}
+if(typeof module!=='undefined')module.exports={generate,solve,fits};
+// ===== UI =====
+if(typeof document!=='undefined'){
+const COLORS=['#f7c6c7','#c9e4ff','#d4f0c4','#ffe7a8','#e2d1f9','#ffd2b0','#bfeee8','#f3c9e8','#dfe8b0','#c7d3f7','#f9dcc4','#cdeccd'];
+const DARK=['#c0565a','#3f7fc2','#4f9a3f','#c49a1c','#8a62c4','#d07a3a','#2f9e92','#b85aa0','#7d8f2a','#5068c0','#c08050','#4f9a5f'];
+const $=id=>document.getElementById(id);let pz,placed,hist,done,down=null,cur=null,clueAt;
+function icon(shape,n,col){const g={sq:'<rect x="22" y="22" width="56" height="56" rx="8"/>',w:'<rect x="10" y="28" width="80" height="44" rx="8"/>',t:'<rect x="28" y="10" width="44" height="80" rx="8"/>',
+  f:'<rect x="8" y="14" width="56" height="44" rx="8" stroke-dasharray="7 6"/><rect x="36" y="42" width="56" height="44" rx="8" stroke-dasharray="7 6"/>'}[shape];
+  return `<svg viewBox="0 0 100 100"><g fill="${shape==='f'?'none':col}" stroke="${shape==='f'?col:'#fff'}" stroke-width="${shape==='f'?4:5}" ${shape==='f'&&n!=null?'opacity=".45"':''}>${g}</g>`+
+  (n!=null?(shape==='f'?`<text x="50" y="53" text-anchor="middle" dominant-baseline="middle" font-size="46" font-weight="800" fill="${col}" stroke="#fff" stroke-width="12" stroke-linejoin="round" paint-order="stroke" font-family="sans-serif">${n}</text>`
+   :`<text x="50" y="53" text-anchor="middle" dominant-baseline="middle" font-size="42" font-weight="800" fill="#fff" stroke="rgba(0,0,0,.25)" stroke-width="3" paint-order="stroke" font-family="sans-serif">${n}</text>`):'')+'</svg>'}
+$('legend').innerHTML=[['sq','正方形'],['w','寬長方形'],['t','高長方形'],['f','任意形狀']].map(([s,t])=>`<span>${icon(s,null,'#666')}${t}</span>`).join('');
+function grid(el,N){el.style.gridTemplateColumns=el.style.gridTemplateRows=`repeat(${N},minmax(0,1fr))`}
+function newGame(){const N=+$('size').value;pz=generate(N);placed=[];hist=[];done=false;$('win').classList.remove('show');
+  clueAt=new Map();pz.clues.forEach((q,k)=>clueAt.set(q.r*N+q.c,k));
+  ['board','layer','clues'].forEach(id=>grid($(id),N));$('board').innerHTML='';
+  for(let i=0;i<N*N;i++){const d=document.createElement('div');d.className='cell';$('board').appendChild(d)}
+  $('clues').innerHTML=pz.clues.map((q,k)=>`<div class="clue" style="grid-area:${q.r+1}/${q.c+1}/span 1/span 1">${icon(q.shape,q.n,DARK[k%12])}</div>`).join('');render()}
+function inside(o,r,c){return r>=o.r&&r<o.r+o.h&&c>=o.c&&c<o.c+o.w}
+function cluesIn(o){return pz.clues.map((q,k)=>inside(o,q.r,q.c)?k:-1).filter(k=>k>=0)}
+function valid(o){const ks=cluesIn(o);return ks.length===1&&fits(pz.clues[ks[0]],o.w,o.h)}
+function render(extra){let h='';for(const o of placed){const ks=cluesIn(o),col=ks.length===1?COLORS[ks[0]%12]:'#e6e6e6';
+  h+=`<div class="patch${valid(o)?'':' bad'}${o.hint?' hint':''}" style="grid-area:${o.r+1}/${o.c+1}/span ${o.h}/span ${o.w};background:${col}"></div>`;o.hint=false}
+  if(cur)h+=`<div class="patch preview" style="grid-area:${cur.r+1}/${cur.c+1}/span ${cur.h}/span ${cur.w};background:transparent"></div>`;$('layer').innerHTML=h;
+  const N=pz.N,area=placed.reduce((a,o)=>a+o.w*o.h,0);
+  if(!down&&area===N*N&&placed.length===pz.clues.length&&placed.every(valid)){done=true;try{parent.postMessage({officeSolve:'patches'},parent.location.origin)}catch(e){}setTimeout(()=>$('win').classList.add('show'),300)}}
+function cellAt(e){const b=$('wrap').getBoundingClientRect(),N=pz.N;const c=Math.floor((e.clientX-b.left)/b.width*N),r=Math.floor((e.clientY-b.top)/b.height*N);
+  return{r:Math.max(0,Math.min(N-1,r)),c:Math.max(0,Math.min(N-1,c))}}
+function rectOf(a,b){return{r:Math.min(a.r,b.r),c:Math.min(a.c,b.c),h:Math.abs(a.r-b.r)+1,w:Math.abs(a.c-b.c)+1}}
+function overlap(a,b){return a.r<b.r+b.h&&b.r<a.r+a.h&&a.c<b.c+b.w&&b.c<a.c+a.w}
+function save(){hist.push(placed.map(o=>({...o})));if(hist.length>300)hist.shift()}
+const W=$('wrap');
+let base=null,origin=null,moved=false;
+function union(a,b){const r=Math.min(a.r,b.r),c=Math.min(a.c,b.c);return{r,c,h:Math.max(a.r+a.h,b.r+b.h)-r,w:Math.max(a.c+a.w,b.c+b.w)-c}}
+function shrink(p,o){ // largest sub-rect of p not overlapping o, keeping p's clue(s) if any
+  const ks=cluesIn(p);let best=null;
+  for(let r=p.r;r<p.r+p.h;r++)for(let c=p.c;c<p.c+p.w;c++)for(let h=1;r+h<=p.r+p.h;h++)for(let w=1;c+w<=p.c+p.w;w++){
+    const q={r,c,w,h};if(overlap(q,o))continue;if(ks.length&&!ks.every(k=>inside(q,pz.clues[k].r,pz.clues[k].c)))continue;
+    if(!best||w*h>best.w*best.h)best=q}
+  return best}
+function live(){const out=[];for(const p of base){if(p===origin)continue;if(!overlap(p,cur)){out.push({...p});continue}const q=shrink(p,cur);if(q)out.push(q)}out.push({...cur});return out}
+W.addEventListener('pointerdown',e=>{if(done)return;e.preventDefault();down=cellAt(e);W.setPointerCapture(e.pointerId);
+  base=placed;origin=placed.find(p=>inside(p,down.r,down.c))||null;moved=false;
+  if(!origin){cur=rectOf(down,down);placed=live()}render()});
+W.addEventListener('pointermove',e=>{if(!down)return;const at=cellAt(e);if(!moved&&at.r===down.r&&at.c===down.c)return;
+  let n=rectOf(down,at);if(origin)n=union(origin,n);if(moved&&cur&&n.r===cur.r&&n.c===cur.c&&n.w===cur.w&&n.h===cur.h)return;
+  moved=true;cur=n;placed=live();render()});
+W.addEventListener('pointerup',()=>{if(!down)return;down=null;
+  if(!moved&&origin){placed=base.filter(p=>p!==origin)} // tap deletes
+  cur=null;hist.push(base.map(o=>({...o})));if(hist.length>300)hist.shift();base=null;origin=null;render()});
+W.addEventListener('pointercancel',()=>{if(base)placed=base;down=cur=null;base=origin=null;render()});
+$('undo').onclick=()=>{if(done||!hist.length)return;placed=hist.pop();render()};
+$('clear').onclick=()=>{if(done)return;save();placed=[];render()};
+$('hint').onclick=()=>{if(done)return;const same=(a,b)=>a.r===b.r&&a.c===b.c&&a.w===b.w&&a.h===b.h;
+  const wrong=placed.find(p=>!pz.sol.some(s=>same(s,p)));save();
+  if(wrong){placed=placed.filter(p=>p!==wrong)}else{const m=pz.sol.filter(s=>!placed.some(p=>same(p,s)));if(!m.length)return;const s=m[rnd(m.length)];
+    placed=placed.filter(p=>!overlap(p,s));placed.push({r:s.r,c:s.c,w:s.w,h:s.h,hint:true})}render()};
+$('new').onclick=newGame;$('again').onclick=newGame;$('size').onchange=newGame;newGame();
+}
+</script></body></html>
