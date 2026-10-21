@@ -2364,25 +2364,38 @@ function actionsNow() {
   return list;
 }
 
+// Buttons run whatever their action is this frame, so a button can stay put while its neighbours come and go.
+let actionRuns = new Map();
+
 function paintActions() {
   const box = $("actions");
   if (!box) return;
   const list = actionsNow();
-  const sig = list.map((item) => item.label).join("|");
+  actionRuns = new Map(list.map((action) => [action.id, action.run]));
+  const sig = list.map((action) => `${action.id}:${action.label}`).join("|");
   if (box.dataset.sig === sig) return;
   box.dataset.sig = sig;
-  box.replaceChildren();
-  for (const action of list) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = action.label;
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      action.run();
-    });
-    box.appendChild(button);
-  }
+  // Only add, drop or relabel the buttons that changed. Rebuilding the whole bar whenever a toy, chair
+  // or snack comes into reach pulled the button out from under a finger that was already tapping it.
+  const old = new Map([...box.children].map((button) => [button.dataset.action, button]));
+  const keep = new Set(list.map((action) => action.id));
+  for (const [id, button] of old) if (!keep.has(id)) button.remove();
+  list.forEach((action, index) => {
+    let button = old.get(action.id);
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.dataset.action = action.id;
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        actionRuns.get(action.id)?.();
+      });
+    }
+    if (button.textContent !== action.label) button.textContent = action.label;
+    const at = box.children[index] || null;
+    if (at !== button) box.insertBefore(button, at);
+  });
 }
 
 function update(dt) {
