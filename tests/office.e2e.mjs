@@ -15,6 +15,10 @@ const RUN = join(tmpdir(), `mini-office-e2e-${process.pid}`);
 const SHOTS = join(RUN, "shots");
 const ARTIFACTS = process.env.ARTIFACTS || "";
 const saved = [];
+// The full run splits into two halves CI can run side by side: "desk" is the desktop
+// walkthrough, "phone" the phone office and the toy room. No --shard runs both.
+const SHARD = process.argv.find((arg) => arg.startsWith("--shard="))?.slice("--shard=".length) || "";
+if (SHARD && SHARD !== "desk" && SHARD !== "phone") throw new Error(`未知的 --shard=${SHARD}，只能是 desk 或 phone`);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -1068,6 +1072,26 @@ async function mobileOffice(browser, password) {
   await rin.getByRole("button", { name: "進入辦公室" }).click();
   await ready(rin);
   await march(rin, 660, 340);
+  // A button that did not change must stay the same element when another one shows up beside it,
+  // or a tap that is already on its way lands on a node that has just been thrown away.
+  const joinButton = await rin.getByRole("button", { name: "加入悄悄話" }).elementHandle();
+  const besideChair = await rin.evaluate(() => {
+    const kuma = window.office.others.find((person) => person.id === "kuma");
+    for (const item of window.office.furniture) {
+      if (item.kind !== "chair") continue;
+      for (let i = 0; i < 32; i++) {
+        const x = item.x + 16 + Math.cos((i / 32) * Math.PI * 2) * 55;
+        const y = item.y + 13 + Math.sin((i / 32) * Math.PI * 2) * 55;
+        const gap = Math.hypot(x - kuma.x, y - kuma.y);
+        if (gap > 70 && gap < 95) return { x, y };
+      }
+    }
+    return null;
+  });
+  assert(besideChair, "找不到在悄悄話範圍內又靠近椅子的位置");
+  await rin.evaluate(({ x, y }) => window.office.place(x, y), besideChair);
+  await rin.waitForFunction(() => window.office.actions.includes("坐下"));
+  assert(await joinButton.evaluate((button) => button.isConnected), "多出坐下按鈕時，加入悄悄話按鈕被重建了");
   await rin.getByRole("button", { name: "加入悄悄話" }).click();
   const accept = yuki.getByRole("button", { name: "答應" });
   await accept.waitFor();
@@ -2956,6 +2980,19 @@ async function main() {
       console.log("e2e ok");
       return;
     }
+    if (SHARD === "phone") {
+      const setPassword = await fetch(`${ORIGIN}/api/office/admin/password`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${ADMIN}`, origin: ORIGIN },
+        body: JSON.stringify({ password: PASS }),
+      });
+      assert(setPassword.ok, `手機測試沒設好密碼 ${setPassword.status}`);
+      await mobileOffice(browser, PASS);
+      await toyRoom(browser);
+      publishShots();
+      console.log("e2e ok");
+      return;
+    }
     const lobby = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     const officeRedirect = await fetch(`${ORIGIN}/office/`, { redirect: "manual" });
     assert(officeRedirect.status === 302, `/office 應轉到首頁，實際 ${officeRedirect.status}`);
@@ -3724,8 +3761,10 @@ async function main() {
     await admin.locator('tr[data-id="mika"] button', { hasText: "移除" }).click();
     await mika.getByText("已被管理員移除").waitFor();
 
-    await mobileOffice(browser, PASS2);
-    await toyRoom(browser);
+    if (SHARD !== "desk") {
+      await mobileOffice(browser, PASS2);
+      await toyRoom(browser);
+    }
 
     publishShots();
     console.log("e2e ok");
