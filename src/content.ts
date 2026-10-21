@@ -61,6 +61,7 @@ export const FURNITURE: Record<string, { w: number; h: number; solid: boolean; l
   coffeetable: { w: 88, h: 40, solid: true, label: "茶几" },
   snackcab: { w: 40, h: 32, solid: true, label: "零食櫃", fixed: true },
   vendor: { w: 32, h: 30, solid: true, label: "販賣機", fixed: true },
+  toyrack: { w: 48, h: 28, solid: true, label: "玩具架", fixed: true },
 };
 
 const RESERVED = new Set(["lala", "admin", "system", "npc", "office"]);
@@ -1004,6 +1005,8 @@ export function buildOffice(): OfficeMap {
     { id: "sofa-table", kind: "coffeetable", x: 33 * TILE + 4, y: 28 * TILE, rot: 0 },
     { id: "snack-cabinet", kind: "snackcab", x: 33 * TILE + 4, y: 31 * TILE + 8, rot: 180 },
     { id: "snack-vendor", kind: "vendor", x: 34 * TILE + 20, y: 31 * TILE + 10, rot: 180 },
+    // Against the game room's north wall, between the two arcade cabinets.
+    { id: "toy-rack", kind: "toyrack", x: 31 * TILE + 24, y: TILE + 4, rot: 0 },
     { id: "meet-chair-s1", kind: "chair", x: 620, y: 202, rot: 0 },
     { id: "meet-chair-s2", kind: "chair", x: 700, y: 202, rot: 0 },
     { id: "meet-chair-w", kind: "chair", x: 536, y: 120, rot: 0 },

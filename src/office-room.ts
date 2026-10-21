@@ -32,6 +32,7 @@ import {
 } from "./content";
 import { HANDS_META, isFixedId, isFixedKind, MACHINE_ID, SnackRoom, SNACK_META, type SnackMachine } from "./snacks";
 import { STALL_COOLDOWN_MS, STALL_META, StallDoors } from "./stalls";
+import { knockSpot, openFloor, TOY_META, TOY_RACK_ID, ToyRoom, type Body, type ToyFail } from "./toys";
 import { adminSessionHash, adminSessionRecord, adminSessionState } from "./admin-session";
 import { passwordHash, passwordVerdict, randomToken, readMeta, sha256, writeMeta } from "./crypto";
 import { json, readCookie } from "./http";
@@ -89,6 +90,7 @@ type Att = {
   lastChat: number;
   lastStall?: number;
   lastReset?: number;
+  knockAt?: number;
   lastPersist: number;
   deviceKey: string;
   session: string;
@@ -203,6 +205,8 @@ export class OfficeRoom implements DurableObject {
   private readonly furnMoveAt = new Map<string, number>();
   private readonly snacks = new SnackRoom();
   private readonly stalls = new StallDoors();
+  private readonly toys = new ToyRoom();
+  private toyTimer: ReturnType<typeof setTimeout> | null = null;
   private chairsReady = false;
 
   constructor(
@@ -292,6 +296,7 @@ export class OfficeRoom implements DurableObject {
     else if (kind === "glide") this.onGlide(ws, att, body);
     else if (kind === "snack") this.onSnack(ws, att, body);
     else if (kind === "stall") this.onStall(ws, att, body);
+    else if (kind === "toy") this.onToy(ws, att, body);
     else if (kind === "reset") this.onReset(ws, att);
   }
 
@@ -302,6 +307,11 @@ export class OfficeRoom implements DurableObject {
     if (still) return;
     this.releaseSeat(att.id);
     if (this.snacks.release(att.id)) this.rememberHands();
+    const toyLeft = this.toys.release(att.id);
+    if (toyLeft.toy || toyLeft.pinch) {
+      this.rememberToys();
+      this.broadcastToys(toyLeft.pinch ? { kind: "pinch", by: toyLeft.pinch.by, to: toyLeft.pinch.to, on: false } : null);
+    }
     this.dropWhisper(att, ws);
     this.persist(att);
     this.broadcast({ t: "leave", id: att.id });
@@ -319,6 +329,7 @@ export class OfficeRoom implements DurableObject {
   private async bootStorage() {
     await runMigrations(this.officeSql(), this.map.furniture, sha256);
     this.loadSnacks();
+    this.toys.load(this.meta(TOY_META));
     this.stalls.load(this.meta(STALL_META));
     this.restoreOccupants();
     this.sweepLimits();
@@ -711,6 +722,7 @@ export class OfficeRoom implements DurableObject {
       stock: this.snacks.view(),
       hands: this.snacks.handsView((id) => id === member.id || this.ctx.getWebSockets(id).some((ws) => this.attOf(ws))),
       doors: this.stalls.view(),
+      toys: this.toys.view((id) => id === member.id || this.ctx.getWebSockets(id).some((ws) => this.attOf(ws))),
     });
     this.broadcast({ t: "join", player: this.player(att) }, server);
     const held = this.snacks.handsView((id) => id === member.id)[0];
@@ -984,7 +996,10 @@ export class OfficeRoom implements DurableObject {
       setChairsReady: (ready) => {
         this.chairsReady = ready;
       },
-      reloadMeta: () => this.loadSnacks(),
+      reloadMeta: () => {
+        this.loadSnacks();
+        this.toys.load(this.meta(TOY_META));
+      },
     });
     for (const ws of this.ctx.getWebSockets()) this.goodbye(ws, "restored");
     return json({ ok: true });
@@ -1030,6 +1045,8 @@ export class OfficeRoom implements DurableObject {
     if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) return;
     const now = Date.now();
     if (att.lastMove && now - att.lastMove < 30) return;
+    // Moves sent before a knockback reached this player still start from the old spot; drop them quietly.
+    if (att.knockAt && now - att.knockAt < 600 && Math.hypot(x - att.x, y - att.y) > 40) return;
     const dt = Math.min(2, Math.max(0.04, att.lastMove ? (now - att.lastMove) / 1000 : 0.04));
     if (Math.hypot(x - att.x, y - att.y) > 340 * dt + 28 || this.inWall(x, y) || this.stalls.blocks(x, y, WALL_RADIUS)) {
       this.rejectMove(ws, att);
@@ -1040,6 +1057,7 @@ export class OfficeRoom implements DurableObject {
     att.x = x;
     att.y = y;
     att.lastMove = now;
+    this.toys.track(att.id, x, y, now);
     if (att.editing && Math.hypot(att.x - this.map.lala.x, att.y - this.map.lala.y) > 220) {
       att.editing = false;
       this.send(ws, { t: "edit", on: false });
@@ -1200,7 +1218,7 @@ export class OfficeRoom implements DurableObject {
     let replaced = false;
     if (op === "move" || op === "rot") {
       const id = typeof body.id === "string" ? body.id : "";
-      if (isFixedId(id)) {
+      if (isFixedId(id) || id === TOY_RACK_ID) {
         this.send(ws, { t: "error", message: "這個設備是固定的", furniture: this.furniture() });
         return;
       }
@@ -1248,7 +1266,7 @@ export class OfficeRoom implements DurableObject {
       changed = { id, kind: String(item.kind), x, y, rot };
     } else if (op === "add") {
       const kind = typeof body.kind === "string" ? body.kind : "";
-      if (isFixedKind(kind)) {
+      if (isFixedKind(kind) || kind === "toyrack") {
         this.send(ws, { t: "error", message: "這個設備是固定的", furniture: this.furniture() });
         return;
       }
@@ -1275,7 +1293,7 @@ export class OfficeRoom implements DurableObject {
       changed = { id, kind, x, y, rot };
     } else if (op === "remove") {
       const id = typeof body.id === "string" ? body.id : "";
-      if (isFixedId(id)) {
+      if (isFixedId(id) || id === TOY_RACK_ID) {
         this.send(ws, { t: "error", message: "這個設備是固定的", furniture: this.furniture() });
         return;
       }
@@ -1347,6 +1365,10 @@ export class OfficeRoom implements DurableObject {
       });
       return;
     }
+    if (this.toys.hand(att.id)) {
+      this.send(ws, { t: "error", message: "先把玩具放下" });
+      return;
+    }
     const result = this.snacks.take(
       att.id,
       body.item,
@@ -1374,6 +1396,195 @@ export class OfficeRoom implements DurableObject {
     });
   }
 
+  private onToy(ws: WebSocket, att: Att, body: Record<string, unknown>) {
+    const now = Date.now();
+    this.settleToys(now);
+    const op = body.op;
+    const snack = Boolean(this.snacks.hand(att.id));
+    if (op === "take") {
+      const result = this.toys.take(att.id, body.toy, att.x, att.y, this.furnitureCenter(TOY_RACK_ID), snack);
+      if (!result.ok) return this.toyError(ws, result.reason);
+      this.rememberToys();
+      this.broadcastToys({ kind: "hold", by: att.id, toy: result.toy });
+      return;
+    }
+    if (op === "back") {
+      const result = this.toys.putBack(att.id, att.x, att.y, this.furnitureCenter(TOY_RACK_ID));
+      if (!result.ok) return this.toyError(ws, result.reason);
+      this.rememberToys();
+      this.broadcastToys({ kind: "back", by: att.id, toy: result.toy });
+      return;
+    }
+    if (op === "drop") {
+      const result = this.toys.drop(att.id, att.x, att.y);
+      if (!result.ok) return this.toyError(ws, result.reason);
+      this.rememberToys();
+      this.broadcastToys({ kind: "drop", by: att.id, toy: result.toy, x: result.x, y: result.y });
+      return;
+    }
+    if (op === "catch") {
+      const result = this.toys.catchBall(att.id, now, snack);
+      if (!result.ok) return this.toyError(ws, result.reason);
+      this.rememberToys();
+      this.broadcastToys({ kind: "catch", by: att.id, from: result.by, combo: result.combo });
+      this.scheduleToys();
+      return;
+    }
+    if (op === "pinch" && body.on === false) {
+      const ended = this.toys.pinchEnd(att.id);
+      if (ended) this.broadcastToys({ kind: "pinch", by: ended.by, to: ended.to, on: false });
+      this.scheduleToys();
+      return;
+    }
+    const me = this.toyBody(att);
+    const other = typeof body.to === "string" && body.to !== att.id ? this.attachment(body.to) : null;
+    const target = other ? this.toyBody(other) : null;
+    const toy = this.toys.hand(att.id);
+    if (op === "ram") {
+      const result = this.toys.ram(me, target, now, (who, nx, ny) => this.knockFor(who, nx, ny));
+      if (!result.ok || !other) return;
+      if (result.spot) {
+        const hit = this.socketOf(other.id);
+        if (hit) {
+          hit.att.x = result.spot.x;
+          hit.att.y = result.spot.y;
+          hit.att.lastMove = now;
+          hit.att.knockAt = now;
+          hit.ws.serializeAttachment(hit.att);
+          this.keepWhisper(hit.ws, hit.att);
+          this.persist(hit.att);
+        }
+      }
+      this.broadcastToys({
+        kind: "ram",
+        by: att.id,
+        to: result.to,
+        nx: result.nx,
+        ny: result.ny,
+        knock: Boolean(result.spot),
+        x: result.spot?.x ?? other.x,
+        y: result.spot?.y ?? other.y,
+      });
+      return;
+    }
+    // Pinching starts with { op: "pinch", on: true } and ends with on: false; every other toy uses "use".
+    const pinchOn = op === "pinch" && body.on === true;
+    if (op !== "use" && !pinchOn) return;
+    if (!toy) return this.toyError(ws, "empty");
+    if (pinchOn !== (toy === "pinch")) return this.toyError(ws, "wrong");
+    if (toy === "hammer" || toy === "pillow") {
+      const result = this.toys.hit(me, target, toy, now);
+      if (!result.ok) return this.toyError(ws, result.reason);
+      this.broadcastToys({ kind: toy === "hammer" ? "bonk" : "pillow", by: att.id, to: result.to });
+    } else if (toy === "ball") {
+      const result = this.toys.throwBall(me, target, now, (who, nx, ny) => this.ballLanding(who, nx, ny));
+      if (!result.ok) return this.toyError(ws, result.reason);
+      this.rememberToys();
+      this.broadcastToys({ kind: "throw", by: att.id, to: result.to, ms: result.ms, x: result.drop.x, y: result.drop.y, combo: result.combo });
+      this.scheduleToys();
+    } else if (toy === "plane") {
+      const text = normalizeChat(body.text);
+      const result = this.toys.plane(me, target, text, now);
+      if (!result.ok || !text || !other) return this.toyError(ws, result.ok ? "none" : result.reason);
+      this.broadcastToys({ kind: "plane", by: att.id, to: result.to });
+      const letter = { t: "toys", letter: { from: att.id, name: att.name, text, at: now } };
+      for (const socket of this.ctx.getWebSockets(other.id)) this.send(socket, letter);
+    } else if (toy === "pinch") {
+      const result = this.toys.pinchStart(me, target, now);
+      if (!result.ok) return this.toyError(ws, result.reason);
+      this.broadcastToys({ kind: "pinch", by: att.id, to: result.to, on: true, ms: result.ms });
+      this.scheduleToys();
+    } else {
+      this.toyError(ws, "wrong");
+    }
+  }
+
+  private toyBody(att: Att): Body {
+    return { id: att.id, x: att.x, y: att.y, r: bodyRadiusOf(att.look), seated: Boolean(att.seat) };
+  }
+
+  private toyError(ws: WebSocket, reason: ToyFail) {
+    const messages: Partial<Record<ToyFail, string>> = {
+      far: "再靠近一點",
+      busy: "現在拿不到",
+      full: "手上已經有玩具了",
+      snack: "先把手上的零食吃完",
+      empty: "手上沒有玩具",
+      cool: "慢一點，等一下再玩",
+      capped: "對方玩得夠多了，讓他休息一下",
+      wrong: "手上的玩具不能這樣用",
+      none: "旁邊沒有同事",
+      early: "球還沒到",
+      late: "沒接到",
+      unknown: "沒有這個玩具",
+    };
+    const message = messages[reason];
+    if (message) this.send(ws, { t: "error", message, toy: reason });
+  }
+
+  private toyFloor(bodies: Body[], bodyRadius: number, radius = WALL_RADIUS) {
+    return openFloor({
+      walls: this.map.walls,
+      props: this.map.props.filter((prop) => prop.kind !== "stalldoor"),
+      furniture: this.solidFurniture(),
+      bodies,
+      bodyRadius,
+      radius,
+      extra: (x, y) => this.stalls.blocks(x, y, radius),
+    });
+  }
+
+  // Knockback lands only where the whole slide is clear of walls, furniture, the map edge and other people.
+  private knockFor(target: Body, nx: number, ny: number) {
+    const bodies: Body[] = [{ id: "lala", x: this.map.lala.x, y: this.map.lala.y, r: bodyRadiusOf({ body: "bean" }) }];
+    for (const socket of this.ctx.getWebSockets()) {
+      const other = this.attOf(socket);
+      if (!other || other.id === target.id) continue;
+      bodies.push({ id: other.id, x: other.x, y: other.y, r: bodyRadiusOf(other.look) });
+    }
+    this.ensureChairs();
+    for (const chair of this.chairs.values()) {
+      const center = this.chairCenter(chair);
+      bodies.push({ id: chair.id, x: center.x, y: center.y, r: 18 });
+    }
+    return knockSpot(target, nx, ny, this.toyFloor(bodies, target.r));
+  }
+
+  private ballLanding(target: Body, nx: number, ny: number) {
+    const spot = knockSpot(target, nx, ny, this.toyFloor([], 0, WALL_RADIUS + 1), [40, 28, 16]);
+    return spot || { x: target.x, y: target.y };
+  }
+
+  private settleToys(now: number) {
+    const done = this.toys.settle(now);
+    if (done.dropped) {
+      this.rememberToys();
+      this.broadcastToys({ kind: "fall", to: done.dropped.to, x: done.dropped.x, y: done.dropped.y });
+    }
+    if (done.pinch) this.broadcastToys({ kind: "pinch", by: done.pinch.by, to: done.pinch.to, on: false });
+    this.scheduleToys();
+  }
+
+  private scheduleToys() {
+    if (this.toyTimer) clearTimeout(this.toyTimer);
+    this.toyTimer = null;
+    const deadline = this.toys.nextDeadline();
+    if (deadline == null) return;
+    this.toyTimer = setTimeout(() => {
+      this.toyTimer = null;
+      this.settleToys(Date.now());
+    }, Math.max(0, deadline - Date.now()) + 20);
+  }
+
+  private broadcastToys(fx: Record<string, unknown> | null) {
+    const view = this.toys.view((id) => this.ctx.getWebSockets(id).some((ws) => this.attOf(ws)));
+    this.broadcast(fx ? { t: "toys", ...view, fx } : { t: "toys", ...view });
+  }
+
+  private rememberToys() {
+    this.setMeta(TOY_META, this.toys.save());
+  }
+
   private loadSnacks() {
     this.snacks.load(this.meta(SNACK_META), this.meta(HANDS_META));
   }
@@ -1392,7 +1603,10 @@ export class OfficeRoom implements DurableObject {
   }
 
   private machineAnchor(machine: SnackMachine): { x: number; y: number } | null {
-    const id = MACHINE_ID[machine];
+    return this.furnitureCenter(MACHINE_ID[machine]);
+  }
+
+  private furnitureCenter(id: string): { x: number; y: number } | null {
     const rows = this.sql
       .exec<{ kind: string; x: number; y: number; rot: number }>(
         `SELECT kind, x, y, rot FROM furniture WHERE id = ?`,

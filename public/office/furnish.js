@@ -38,6 +38,11 @@ const FILES = [
   "cupcake",
   "cup-tea",
   "donut",
+  "bookcaseOpenLow",
+  "bear",
+  "tool-hammer",
+  "ball-red",
+  "vehicle-racer",
 ];
 
 const PALETTE = {
@@ -51,6 +56,7 @@ const PALETTE = {
   metalLight: { color: 0xfff8f2, roughness: 0.5, metalness: 0.05 },
   metalMedium: { color: 0xb7b0c2, roughness: 0.52, metalness: 0.08 },
   metalDark: { color: 0x3a3446, roughness: 0.42, metalness: 0.12 },
+  fur: { color: 0xe9bf94, roughness: 0.96, metalness: 0 },
   plant: { color: 0x7dca78, roughness: 0.88, metalness: 0 },
   lamp: { color: 0xfff1c4, roughness: 0.62, metalness: 0, emissive: 0xffe29a, emissiveIntensity: 0.55 },
   glass: { color: 0xd7f4ff, roughness: 0.12, metalness: 0.02, transparent: true, opacity: 0.45 },
@@ -59,9 +65,9 @@ const PALETTE = {
 
 // Only the big pieces get an edge line. Small desk clutter stays plain so a
 // busy office does not double its draw calls on phones.
-const OUTLINED = new Set(["desk", "loungeSofa", "bookcaseOpen", "kitchenCabinet", "table", "cabinetTelevision", "kitchenFridgeSmall", "toilet", "bathroomSink", "doorway", "wall"]);
-// Mini Arcade and Food Kit ship a colormap instead of Furniture Kit material names.
-const TEXTURED = new Set(["vending-machine", "plate", "cookie", "cupcake", "cup-tea", "donut"]);
+const OUTLINED = new Set(["desk", "loungeSofa", "bookcaseOpen", "bookcaseOpenLow", "kitchenCabinet", "table", "cabinetTelevision", "kitchenFridgeSmall", "toilet", "bathroomSink", "doorway", "wall"]);
+// Mini Arcade, Food Kit, Survival Kit, Minigolf Kit and Toy Car Kit ship a colormap instead of Furniture Kit material names.
+const TEXTURED = new Set(["vending-machine", "plate", "cookie", "cupcake", "cup-tea", "donut", "tool-hammer", "ball-red", "vehicle-racer"]);
 const ramp = stepGradient([178, 224, 255]);
 
 function recolor(root, file) {

@@ -8,6 +8,8 @@ These GLB files are models from Kenney's Furniture Kit (official download
 at kenney.nl/assets/furniture-kit). The bathroom pieces (toilet, doorway,
 wall, bathroomSink) keep the original material names so the office can
 recolor them. bathroomSink.glb is the official GLB.
+The toy rack in the game room is bookcaseOpenLow.glb, the pinch toy is
+bear.glb, and the pillow toy reuses pillow.glb, all from the same kit.
 The rest of the kit is not included.
 Attribution is not required; credit is still appreciated.
 
@@ -31,5 +33,32 @@ plate.glb, cookie.glb, cupcake.glb, cup-tea.glb, and donut.glb are from
 Kenney's Food Kit (kenney.nl/assets/food-kit). Each file embeds the pack
 colormap. This pack has no teapot and no cake stand, so those pieces are
 not included.
+
+Survival Kit
+by Kenney (www.kenney.nl)
+
+License: CC0 1.0 Universal (Public Domain)
+https://creativecommons.org/publicdomain/zero/1.0/
+
+tool-hammer.glb is from Kenney's Survival Kit (kenney.nl/assets/survival-kit)
+and is used as the toy hammer. The pack colormap is embedded in the file.
+
+Minigolf Kit
+by Kenney (www.kenney.nl)
+
+License: CC0 1.0 Universal (Public Domain)
+https://creativecommons.org/publicdomain/zero/1.0/
+
+ball-red.glb is from Kenney's Minigolf Kit (kenney.nl/assets/minigolf-kit)
+and is used as the catch ball. The pack colormap is embedded in the file.
+
+Toy Car Kit
+by Kenney (www.kenney.nl)
+
+License: CC0 1.0 Universal (Public Domain)
+https://creativecommons.org/publicdomain/zero/1.0/
+
+vehicle-racer.glb is from Kenney's Toy Car Kit (kenney.nl/assets/toy-car-kit)
+and is used as the bumper car toy. The pack colormap is embedded in the file.
 
 Support Kenney: https://kenney.nl/donate

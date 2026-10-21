@@ -1,12 +1,15 @@
 import { createWorld } from "./world3d.js";
 import { attachSnacks } from "./snacks.js";
 import { attachStalls } from "./stalls.js";
+import { attachToys } from "./toys.js";
 import { createRequests } from "./requests.js";
 
 const SESSION = "office_session";
 const DEVICE = "office_device";
 const TILE = 32;
 const SPEED = 170;
+// Shift on a keyboard, or the stick pushed to its rim, runs.
+const RUN_SPEED = 280;
 const WHISPER_NEAR = 112;
 const WHISPER_FAR = 176;
 
@@ -97,6 +100,30 @@ const snacks = attachSnacks({
   findPath: (...args) => findPath(...args),
 });
 const stalls = attachStalls({ state, world, send });
+const toys = attachToys({
+  state,
+  world,
+  $,
+  send,
+  sizeOf,
+  phone: () => phoneQuery.matches,
+  bodyRadius: (look) => bodyRadius(look),
+  blocked: () => Boolean(!state.me || state.editing || state.help || state.arcade || state.boardOpen || state.gate || !$("avatar").hidden),
+  flush: () => sendMove(true),
+  hitFurniture: (...args) => hitFurniture(...args),
+  freeSpot: (...args) => freeSpot(...args),
+  findPath: (...args) => findPath(...args),
+  placeMe: (x, y) => {
+    if (!state.me || state.seat) return;
+    state.me.x = x;
+    state.me.y = y;
+    state.path = [];
+    state.sentX = x;
+    state.sentY = y;
+    state.sentAt = performance.now();
+    state.dirty = false;
+  },
+});
 
 let wsGen = 0;
 const requests = createRequests();
@@ -295,6 +322,7 @@ function showGate(message, options = {}) {
   $("editbar").hidden = true;
   $("help").hidden = true;
   snacks.close();
+  toys.close();
   closeArcade();
   closeBoard();
   $("form-password").hidden = false;
@@ -382,6 +410,7 @@ function wallRadius() {
 
 function showAvatar(mode) {
   snacks.close();
+  toys.close();
   state.avatarMode = mode;
   state.gate = mode === "first";
   const profile = profileNow();
@@ -730,6 +759,7 @@ function rememberFace(person) {
 function onNet(message) {
   snacks.onNet(message);
   stalls.onNet(message);
+  toys.onNet(message);
   if (message.t === "welcome") {
     state.map = message.map;
     state.furniture = message.furniture || [];
@@ -1154,6 +1184,7 @@ function clearArmed() {
 
 function setEditing(on) {
   snacks.close();
+  toys.close();
   state.editing = on;
   $("editbar").hidden = !on;
   $("dialogue").hidden = true;
@@ -1286,6 +1317,7 @@ function resolveBodies(x, y, radius) {
 
 function noteBump(hit, bounce) {
   if (!hit) return;
+  toys.bumped(hit.id);
   const now = performance.now();
   if (now - (state.bumpAt.get(hit.id) || 0) < 520) return;
   state.bumpAt.set(hit.id, now);
@@ -1561,6 +1593,7 @@ function hitUse(x, y) {
 
 function openArcade() {
   snacks.close();
+  toys.close();
   state.arcade = true;
   state.path = [];
   $("dialogue").hidden = true;
@@ -1579,6 +1612,7 @@ function closeArcade() {
 
 function openBoard() {
   snacks.close();
+  toys.close();
   state.boardOpen = true;
   state.path = [];
   $("dialogue").hidden = true;
@@ -1671,12 +1705,14 @@ function standUp() {
 function interact() {
   if (!state.me || state.editing || state.help || state.arcade || state.boardOpen || !$("avatar").hidden) return;
   if (snacks.dismiss()) return;
+  if (toys.dismiss()) return;
   const blockBite = nearLala() || (!state.seat && (nearestChair() || nearestUse() || stalls.nearest()));
   if (snacks.carrying() && !blockBite) {
     snacks.nibble();
     return;
   }
   if (snacks.openNearest()) return;
+  if (toys.interact()) return;
   if (state.seat) {
     standUp();
     return;
@@ -1746,6 +1782,7 @@ let pinch = null;
 // Seated taps only use what is already in reach, so the chair is kept.
 function useSeated(point) {
   if (snacks.walk(point, true)) return;
+  if (toys.walk(point, true)) return;
   const spot = hitUse(point.x, point.y);
   if (spot) {
     if (nearestUse()?.use !== spot.use) return;
@@ -1759,6 +1796,7 @@ function useSeated(point) {
 
 function walkOrUse(point) {
   if (snacks.walk(point)) return;
+  if (toys.walk(point)) return;
   const furn = hitFurniture(point.x, point.y);
   if (furn?.kind === "chair") {
     const center = chairCenter(furn);
@@ -2085,6 +2123,7 @@ window.addEventListener("keydown", (event) => {
   }
   state.keys.add(event.key.toLowerCase());
   if (event.key === "e" || event.key === "E") interact();
+  if ((event.key === "q" || event.key === "Q") && !event.repeat && state.me && !state.editing) toys.drop();
   if (event.key === "v" || event.key === "V") {
     world.toggle();
     paintCam();
@@ -2097,7 +2136,11 @@ window.addEventListener("keydown", (event) => {
     rotateSelected();
   }
 });
-window.addEventListener("keyup", (event) => state.keys.delete(event.key.toLowerCase()));
+window.addEventListener("keyup", (event) => {
+  state.keys.delete(event.key.toLowerCase());
+  if (event.key === "e" || event.key === "E") toys.release();
+});
+window.addEventListener("blur", () => toys.release());
 canvas.addEventListener("pointerdown", onPointerDown);
 canvas.addEventListener("pointermove", onPointerMove);
 window.addEventListener("pointercancel", (event) => {
@@ -2300,7 +2343,7 @@ function resize() {
 window.addEventListener("resize", resize);
 
 function actionsNow() {
-  if (!phoneQuery.matches || !state.me || state.editing || state.help || state.arcade || state.boardOpen || !$("avatar").hidden || !$("dialogue").hidden || snacks.isOpen()) return [];
+  if (!phoneQuery.matches || !state.me || state.editing || state.help || state.arcade || state.boardOpen || !$("avatar").hidden || !$("dialogue").hidden || snacks.isOpen() || toys.isOpen()) return [];
   const list = [];
   const near = nearestWhisper();
   if (state.whisper) list.push({ id: "leave", label: "離開悄悄話", run: toggleWhisper });
@@ -2308,6 +2351,7 @@ function actionsNow() {
   else if (near) list.push({ id: "whisper", label: "說悄悄話", run: toggleWhisper });
   const bite = snacks.heldAction();
   if (bite) list.push(bite);
+  list.push(...toys.actions());
   const snack = snacks.action();
   if (snack) list.push(snack);
   else if (state.seat) list.push({ id: "stand", label: "起立", run: interact });
@@ -2343,6 +2387,7 @@ function paintActions() {
 
 function update(dt) {
   snacks.guard();
+  toys.guard();
   if (!state.me || state.gate || !$("avatar").hidden || state.help) {
     state.walking = false;
     world.holdSteer?.(false);
@@ -2359,12 +2404,15 @@ function update(dt) {
     ix = state.stickX;
     iy = -state.stickY;
   }
-  if (snacks.isOpen()) {
+  if (snacks.isOpen() || toys.isOpen()) {
     ix = 0;
     iy = 0;
     state.path = [];
   }
   state.walking = Boolean(ix || iy || state.path?.length);
+  const pushed = Math.hypot(state.stickX, state.stickY) >= 0.95;
+  state.running = state.walking && !state.seat && (state.keys.has("shift") || pushed);
+  const speed = state.running ? RUN_SPEED : SPEED;
   world.holdSteer?.(Boolean(ix || iy));
   const axes = world.axes();
   const mag = Math.hypot(ix, iy);
@@ -2385,7 +2433,7 @@ function update(dt) {
     rideStep(dt, wishX, wishY);
   } else if (ix || iy) {
     state.path = [];
-    tryMove(vx * SPEED * dt, vy * SPEED * dt);
+    tryMove(vx * speed * dt, vy * speed * dt);
   } else if (state.path.length) {
     const target = state.path[0];
     const dx = target.x - state.me.x;
@@ -2393,7 +2441,7 @@ function update(dt) {
     const dist = Math.hypot(dx, dy);
     if (dist < 6) state.path.shift();
     else {
-      const step = Math.min(dist, SPEED * dt);
+      const step = Math.min(dist, speed * dt);
       const moved = tryMove((dx / dist) * step, (dy / dist) * step);
       if (!moved) {
         const goal = state.path[state.path.length - 1];
@@ -2437,11 +2485,12 @@ function update(dt) {
     const near = nearestWhisper();
     if (state.whisperNoteUntil > now) setHint(state.whisperNote);
     else if (phoneQuery.matches) {
-      if (state.hint.startsWith("按 E") || state.hint.startsWith("按 F")) setHint("");
-    } else if (state.whisper) setHint("按 F 離開悄悄話");
+      if (state.hint.startsWith("按 E") || state.hint.startsWith("按住") || state.hint.startsWith("按 F")) setHint("");
+    } else if (toys.urgent() && !toys.isOpen()) setHint(toys.prompt());
+    else if (state.whisper) setHint("按 F 離開悄悄話");
     else if (near?.grouped) setHint(`按 F 想加入 @${near.id} 的悄悄話`);
     else if (near) setHint(`按 F 跟 @${near.id} 說悄悄話`);
-    else if (snacks.isOpen()) setHint("");
+    else if (snacks.isOpen() || toys.isOpen()) setHint("");
     else if (!snacks.carrying() && snacks.prompt()) setHint(snacks.prompt());
     else if (state.seat) setHint(snacks.carrying() ? snacks.prompt() : "按 E 起立");
     else if (nearestChair()) setHint("按 E 坐下");
@@ -2449,9 +2498,10 @@ function update(dt) {
     else if (spot?.use === "play") setHint("按 E 玩小遊戲");
     else if (spot?.use === "scores") setHint("按 E 看排行榜");
     else if (stalls.prompt()) setHint(stalls.prompt());
+    else if (toys.prompt()) setHint(toys.prompt());
     else if (inRestroom() && !snacks.carrying()) setHint("按 E 調整造型");
     else if (snacks.carrying() && snacks.prompt()) setHint(snacks.prompt());
-    else if (state.hint.startsWith("按 E") || state.hint.startsWith("按 F") || state.hint.includes("悄悄話")) setHint("");
+    else if (state.hint.startsWith("按 E") || state.hint.startsWith("按住") || state.hint.startsWith("按 F") || state.hint.includes("悄悄話")) setHint("");
   }
   paintActions();
 }
@@ -2620,6 +2670,16 @@ if (officeDebug) window.office = {
   snackPhase() { return snacks.phase(); },
   snackHold(value) { snacks.hold(value); },
   get snackOpen() { return snacks.isOpen(); },
+  get toys() { return toys.view(); },
+  get toyHeld() { return toys.holding(); },
+  toyHeldOf(id) { return toys.holding(id); },
+  toyProp(id) { return toys.heldProp(id); },
+  toyFx() { return toys.fxLog(); },
+  toySquash(id) { return toys.squashOf(id); },
+  get toyRack() { return toys.rack(); },
+  get toyOpen() { return toys.isOpen(); },
+  toyInteract() { return toys.interact(); },
+  toyMenu() { return toys.openNearest(); },
   feed(message) { onNet(message); },
 };
 
