@@ -1764,6 +1764,194 @@ async function snackLounge(browser) {
 }
 
 
+// Fires the real interact key inside the page as soon as the catch window opens,
+// so a slow runner does not miss it between separate evaluate() round trips.
+function armCatch(page) {
+  return page.evaluate(() => new Promise((resolve) => {
+    const started = performance.now();
+    const tick = () => {
+      if (window.office.toys.catchable) {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "e" }));
+        window.dispatchEvent(new KeyboardEvent("keyup", { key: "e" }));
+        resolve(true);
+      } else if (performance.now() - started > 20000) resolve(false);
+      else requestAnimationFrame(tick);
+    };
+    tick();
+  }));
+}
+
+async function pressE(page) {
+  await page.evaluate(() => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "e" }));
+    window.dispatchEvent(new KeyboardEvent("keyup", { key: "e" }));
+  });
+}
+
+// The ball has a short per-player cooldown, so keep pressing until it actually leaves the hand.
+async function throwBall(page) {
+  const started = Date.now();
+  while (Date.now() - started < 15000) {
+    await pressE(page);
+    const gone = await page.waitForFunction(() => window.office.toyHeld !== "ball", null, { timeout: 1000 }).then(() => true, () => false);
+    if (gone) return;
+  }
+  throw new Error("球一直丟不出去");
+}
+
+async function takeToy(page, toy) {
+  if (!(await page.locator("#toy-menu").isVisible())) {
+    // Empty hands open the rack with the key; holding a toy next to a coworker the key uses the toy,
+    // so the rack is opened the way a click on it does.
+    if (await page.evaluate(() => window.office.toyHeld)) await page.evaluate(() => window.office.toyMenu());
+    else await pressE(page);
+    await page.locator("#toy-menu").waitFor();
+  }
+  await page.locator(`#toy-menu button[data-toy="${toy}"]:not([disabled])`).click();
+  await page.waitForFunction((toy) => window.office.toyHeld === toy, toy);
+  // Taking a toy closes the rack menu; the next press of the key uses the toy.
+  await page.locator("#toy-menu").waitFor({ state: "hidden" });
+}
+
+async function toyRoom(browser) {
+  const setPassword = await fetch(`${ORIGIN}/api/office/admin/password`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${ADMIN}`, origin: ORIGIN },
+    body: JSON.stringify({ password: PASS }),
+  });
+  assert(setPassword.ok, `玩具測試沒設好密碼 ${setPassword.status}`);
+  const pitchContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const mittContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const pitch = await pitchContext.newPage();
+  const mitt = await mittContext.newPage();
+  try {
+    await register(pitch, "pitch", "投手", "貓");
+    await register(mitt, "mitt", "捕手", "兔");
+    await pitch.waitForFunction(() => window.office.others.some((person) => person.id === "mitt"));
+    await mitt.waitForFunction(() => window.office.others.some((person) => person.id === "pitch"));
+    await assetsReady(pitch);
+    const rack = await pitch.evaluate(() => window.office.toyRack);
+    assert(rack, "遊戲室沒有玩具架");
+    // 遊戲室 covers tiles 28–38 by 1–8.
+    assert(rack.x > 28 * 32 && rack.x < 39 * 32 && rack.y > 32 && rack.y < 9 * 32, `玩具架應該在遊戲室，實際 ${JSON.stringify(rack)}`);
+    await pitch.waitForFunction(() => {
+      const toys = window.office.toys.toys;
+      return ["hammer", "ball", "plane", "pillow", "pinch", "ram"].every((id) => toys[id]?.at === "rack")
+        && window.office.toys.placed.length === 6;
+    });
+    await walkTo(pitch, rack.standX, rack.standY);
+    await march(pitch, rack.standX, rack.standY);
+    await walkTo(mitt, rack.standX, rack.standY + 70);
+    await march(mitt, rack.standX, rack.standY + 70);
+    await pitch.waitForFunction(({ x, y }) => Math.hypot(window.office.me.x - x, window.office.me.y - y) < 100, rack);
+    // Both stand still and in hammer reach before anything is swung.
+    await pitch.waitForFunction(() => {
+      const me = window.office.me;
+      const other = window.office.others.find((person) => person.id === "mitt");
+      return other && Math.hypot(me.x - other.x, me.y - other.y) < 96 && Math.hypot(other.x - (other.tx ?? other.x), other.y - (other.ty ?? other.y)) < 1;
+    }, null, { timeout: 20000 }).catch(async (error) => {
+      const where = await pitch.evaluate(() => ({ me: window.office.me, others: window.office.others }));
+      throw new Error(`兩人沒有站在錘子打得到的距離 ${JSON.stringify(where)}`, { cause: error });
+    });
+
+    // Hammer: taking it only puts it in the hand; the interact key then bonks.
+    await takeToy(pitch, "hammer");
+    await mitt.waitForFunction(() => window.office.toyHeldOf("pitch") === "hammer" && window.office.toyProp("pitch") === "hammer");
+    await pressE(pitch);
+    // The lowest squash a frame drew is kept, so a slow runner that skips frames still sees it.
+    await mitt.waitForFunction(() => {
+      const scale = window.office.toySquash("mitt");
+      return scale && scale.low < 0.8;
+    }, null, { timeout: 15000 });
+    await mitt.waitForFunction(() => window.office.toyFx().some((fx) => fx.kind === "bonk" && fx.by === "pitch" && fx.to === "mitt"));
+    await pitch.waitForFunction(() => window.office.toyFx().some((fx) => fx.kind === "bonk" && fx.to === "mitt"));
+    // The squash springs back instead of staying flat.
+    await mitt.waitForFunction(() => {
+      const scale = window.office.toySquash("mitt");
+      return scale && !scale.busy && Math.abs(scale.y - 1) < 0.08;
+    }, null, { timeout: 15000 });
+
+    // Ball: swapping at the rack puts the hammer back.
+    await takeToy(pitch, "ball");
+    await pitch.waitForFunction(() => window.office.toys.toys.hammer.at === "rack");
+    let caught = armCatch(mitt);
+    await throwBall(pitch);
+    assert(await caught, "捕手沒看到可以接球");
+    await mitt.waitForFunction(() => window.office.toyHeld === "ball");
+    await pitch.waitForFunction(() => window.office.toyHeldOf("mitt") === "ball" && window.office.toys.combo === 1);
+    caught = armCatch(pitch);
+    await throwBall(mitt);
+    assert(await caught, "投手沒看到可以接球");
+    await pitch.waitForFunction(() => window.office.toyHeld === "ball" && window.office.toys.combo === 2);
+    await mitt.waitForFunction(() => window.office.toyFx().some((fx) => fx.kind === "catch" && fx.by === "pitch" && fx.combo === 2));
+    await mitt.waitForFunction(() => window.office.bubbles.some((bubble) => bubble.id === "pitch" && bubble.text.includes("連續 2")));
+
+    // Nobody presses the key: the ball drops, rolls, the combo resets, and it can be picked up.
+    await throwBall(pitch);
+    await mitt.waitForFunction(() => window.office.toys.toys.ball.at === "floor" && window.office.toys.combo === 0, null, { timeout: 15000 });
+    await pitch.waitForFunction(() => window.office.toys.toys.ball.at === "floor");
+    const ball = await mitt.evaluate(() => window.office.toys.toys.ball);
+    const mittAt = await mitt.evaluate(() => window.office.me);
+    assert(Math.hypot(ball.x - mittAt.x, ball.y - mittAt.y) < 60, `球應該掉在捕手腳邊 ${JSON.stringify({ ball, mittAt })}`);
+    assert(!(await pitch.evaluate(() => window.office.blocked(window.office.toys.toys.ball.x, window.office.toys.toys.ball.y))), "球不該掉進牆或家具裡");
+    await pressE(mitt);
+    await mitt.waitForFunction(() => window.office.toyHeld === "ball");
+    await pitch.waitForFunction(() => window.office.toyHeldOf("mitt") === "ball");
+
+    // Paper plane: write, throw, and the coworker opens it. The text goes through the chat cleanup and limit.
+    await takeToy(pitch, "plane");
+    await pressE(pitch);
+    await pitch.locator("#toy-compose").waitFor();
+    const note = `<b>午餐</b>吃什麼？${"好".repeat(90)}`;
+    await pitch.locator("#toy-text").fill(note);
+    assert((await pitch.locator("#toy-text").inputValue()).length <= 80, "紙飛機輸入框應該限制 80 字");
+    // Past the input limit on purpose: the server must cut it the same way it cuts chat.
+    await pitch.locator("#toy-text").evaluate((node, text) => { node.value = text; }, note);
+    await pitch.locator("#toy-send").click();
+    await pitch.locator("#toy-compose").waitFor({ state: "hidden" });
+    await mitt.waitForFunction(() => window.office.toyFx().some((fx) => fx.kind === "plane" && fx.by === "pitch"));
+    await mitt.locator("#toy-letter").waitFor();
+    assert((await pitch.evaluate(() => window.office.toys.letters.length)) === 0, "紙飛機的內容只該給收件的人");
+    await mitt.locator("#toy-letter").click();
+    await mitt.locator("#toy-read").waitFor();
+    const letter = await mitt.evaluate(() => ({
+      text: document.querySelector("#toy-read-text").textContent,
+      from: document.querySelector("#toy-read-from").textContent,
+      children: document.querySelector("#toy-read-text").children.length,
+    }));
+    assert(letter.children === 0, "紙飛機內容不該被當成 HTML");
+    assert([...letter.text].length === 80 && letter.text.startsWith("<b>午餐</b>吃什麼？"), `紙飛機應沿用聊天的長度限制 ${JSON.stringify(letter)}`);
+    assert(letter.from.includes("@pitch"), `紙飛機應寫出寄件人 ${JSON.stringify(letter)}`);
+    await mitt.locator("#toy-read-close").click();
+    await mitt.locator("#toy-read").waitFor({ state: "hidden" });
+
+    // Pinch: holding the key stretches the cheeks; letting go snaps them back.
+    await takeToy(pitch, "pinch");
+    await pitch.evaluate(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "e" })));
+    await mitt.waitForFunction(() => window.office.toyFx().some((fx) => fx.kind === "pinch" && fx.by === "pitch" && fx.on === true));
+    await pitch.evaluate(() => window.dispatchEvent(new KeyboardEvent("keyup", { key: "e" })));
+    await mitt.waitForFunction(() => window.office.toyFx().some((fx) => fx.kind === "pinch" && fx.by === "pitch" && fx.on === false));
+
+    // Leaving puts a held toy back on the rack, the same way a held snack is let go.
+    await pitch.close();
+    await mitt.waitForFunction(() => window.office.toys.toys.pinch.at === "rack" && window.office.toyHeldOf("pitch") === "");
+    console.log("toys ok");
+  } catch (error) {
+    const dump = async (page) => (page.isClosed() ? null : page.evaluate(() => ({
+      me: window.office.me && { id: window.office.me.id, x: Math.round(window.office.me.x), y: Math.round(window.office.me.y) },
+      toys: window.office.toys,
+      fx: window.office.toyFx().map(({ at, ...fx }) => fx),
+      bubbles: window.office.bubbles,
+      hint: document.querySelector("#hint")?.textContent,
+    })).catch(() => null));
+    console.error("toy state", JSON.stringify({ pitch: await dump(pitch), mitt: await dump(mitt) }));
+    throw error;
+  } finally {
+    await pitchContext.close();
+    await mittContext.close();
+  }
+}
+
 async function seatedCamera(browser) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   const page = await context.newPage();
@@ -2743,8 +2931,17 @@ async function main() {
       }
       return;
     }
+    if (process.argv.includes("--toys")) {
+      try {
+        await toyRoom(browser);
+      } finally {
+        publishShots();
+      }
+      return;
+    }
     if (process.argv.includes("--core")) {
       await snackLounge(browser);
+      await toyRoom(browser);
       await removedDeviceCanRegister(browser);
       await chatModeAndCamera(browser);
       await phoneCamera(browser);
@@ -3528,6 +3725,7 @@ async function main() {
     await mika.getByText("已被管理員移除").waitFor();
 
     await mobileOffice(browser, PASS2);
+    await toyRoom(browser);
 
     publishShots();
     console.log("e2e ok");

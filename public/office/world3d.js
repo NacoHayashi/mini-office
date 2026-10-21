@@ -234,13 +234,15 @@ export function createWorld({ view, preview, labels, fallback }) {
   const propGroup = new THREE.Group();
   const furnGroup = new THREE.Group();
   const actorGroup = new THREE.Group();
-  root.add(floorGroup, wallGroup, propGroup, furnGroup, actorGroup);
+  const fxGroup = new THREE.Group();
+  root.add(floorGroup, wallGroup, propGroup, furnGroup, actorGroup, fxGroup);
 
   const walls = [];
   const furnMeshes = new Map();
   const actors = new Map();
   let snackHook = null;
   let stallHook = null;
+  let toyHook = null;
   const doorPivots = new Map();
   const floaters = new Map();
   const auras = new Map();
@@ -1107,6 +1109,13 @@ export function createWorld({ view, preview, labels, fallback }) {
       contactShadow(group, w * 0.4, h * 0.4);
       return true;
     }
+    if (kind === "toyrack") {
+      const model = place("bookcaseOpenLow", 46, 26, { maxHeight: 34, stretch: 1.2 });
+      if (!model) return false;
+      group.add(model);
+      contactShadow(group, 22, 12);
+      return true;
+    }
     if (kind === "shelf") {
       const model = place("bookcaseOpen", 46, 26, { maxHeight: 78, stretch: 1.1 });
       if (!model) return false;
@@ -1301,6 +1310,10 @@ export function createWorld({ view, preview, labels, fallback }) {
       addMesh(group, geo("cup", () => new THREE.CylinderGeometry(3.2, 2.8, 5, 10)), mat(0xfff6ea), 14, 19, 2);
     } else if (kind === "snackcab" || kind === "vendor") {
       buildSnackMachine(group, kind);
+    } else if (kind === "toyrack") {
+      contactShadow(group, 22, 12);
+      addMesh(group, roundedBox(44, 30, 22, 3), mat(0xf0d2a4), 0, 15, 0, { cast: true });
+      addMesh(group, roundedBox(40, 1.6, 18, 0.6), mat(0xe7c79a), 0, 15, 2);
     }
     const ring = new THREE.Mesh(geo("ring", () => new THREE.TorusGeometry(16, 1.1, 6, 18)), mat(0xf08aab, { basic: true }));
     ring.rotation.x = Math.PI / 2;
@@ -1993,6 +2006,7 @@ export function createWorld({ view, preview, labels, fallback }) {
     if (phase < 0) phase += 4.2;
     if (actor.userData.decal) paintFace(actor.userData.decal, phase > 4.05, Boolean(talking) || Boolean(actor.userData.tasting));
     if (snackHook) snackHook(actor, { sitting, time, dt });
+    if (toyHook?.actor) toyHook.actor(actor, { sitting, time, dt });
   }
 
   function separateBodies(bodies) {
@@ -2806,6 +2820,7 @@ export function createWorld({ view, preview, labels, fallback }) {
     syncStallDoors(state, dt);
     spinChairs(performance.now() / 1000, state.dt);
     syncActors(state, performance.now() / 1000, dt || 0.016);
+    if (toyHook?.frame) toyHook.frame(dt || 0.016, state);
     placeCamera(dt || 0.016);
     actorGroup.updateMatrixWorld(true);
     for (const [id, actor] of actors) {
@@ -3068,6 +3083,14 @@ export function createWorld({ view, preview, labels, fallback }) {
     worldToScreen,
     setSnackHook(fn) { snackHook = typeof fn === "function" ? fn : null; },
     setStallHook(fn) { stallHook = typeof fn === "function" ? fn : null; },
+    setToyHook(hooks) { toyHook = hooks && typeof hooks === "object" ? hooks : null; },
+    /** Kenney model clone fitted to a box, or null while models are still loading. */
+    model(name, w, h, opts) { return library.settled ? library.take(name, w, h, opts) : null; },
+    get fx() { return fxGroup; },
+    crown(id) {
+      const actor = actors.get(id);
+      return actor ? crownWorldY(actor) : null;
+    },
     actor(id) { return actors.get(id) || null; },
   };
 }
