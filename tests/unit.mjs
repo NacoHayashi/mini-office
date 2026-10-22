@@ -211,7 +211,7 @@ test("已存的造型遇到下架的配件色會退回預設，不會整個失�
 });
 
 test("眼鏡框維持深色，不跟著配件顏色", () => {
-  const world = readFileSync(join(import.meta.dirname, "../public/office/world3d.js"), "utf8");
+  const world = readFileSync(join(import.meta.dirname, "../public/office/avatar.js"), "utf8");
   const glasses = world.slice(world.indexOf('if (glasses === "round"'), world.indexOf('addMesh(parent, geo("lensFill"'));
   assert.match(glasses, /const ring = mat\(0x8a6248/);
   assert.doesNotMatch(glasses, /\), dye,/);
