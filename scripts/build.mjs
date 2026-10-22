@@ -24,6 +24,8 @@ import { existsSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import catalog from "../src/games.json" with { type: "json" };
+import pkg from "../package.json" with { type: "json" };
+import { versionLabel } from "./version.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const gamesDir = join(root, "games");
@@ -127,6 +129,12 @@ addEventListener('hashchange',()=>{if(GAMES[location.hash.slice(1)])nav++;else n
 mkdirSync(dirname(outFile), { recursive: true });
 writeFileSync(outFile, html);
 console.log(`wrote ${outFile} (${Buffer.byteLength(html)} bytes)`);
+
+// Generated on every build (gitignored), so each deploy shows its own commit.
+const versionFile = join(root, "public", "office", "version.txt");
+const version = versionLabel(pkg.version);
+writeFileSync(versionFile, version);
+console.log(`wrote ${versionFile} (${version})`);
 
 const tsc = join(root, "node_modules/typescript/bin/tsc");
 if (!existsSync(tsc)) {

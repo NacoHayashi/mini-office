@@ -2386,6 +2386,9 @@ async function coreOffice(browser) {
   assert((await host.evaluate(() => window.office.connected)) === true, "登入後應該連上辦公室");
   const deskGap = await topbarGap(host);
   assert(deskGap.gap >= 8 && deskGap.hit === "view", `頂部左右兩塊中間應該點得到場景 ${JSON.stringify(deskGap)}`);
+  await host.waitForFunction(() => document.querySelector(".brand .version")?.textContent);
+  const version = await host.locator(".brand .version").textContent();
+  assert(/^(v\d+\.\d+\.\d+( · [0-9a-f]{7})?|dev)$/.test(version), `標題下應該顯示版本號，實際 ${version}`);
   const scored = await host.evaluate(async () => {
     const [before, body] = await Promise.all([
       window.office.ask("leaderboard"),
