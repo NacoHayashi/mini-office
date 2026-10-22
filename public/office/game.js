@@ -126,6 +126,8 @@ const toys = attachToys({
 });
 
 let wsGen = 0;
+// Set once the visitor submits the password, so a slow boot reply cannot reset the gate.
+let loginStarted = false;
 const requests = createRequests();
 let parkTimer = 0;
 
@@ -2158,6 +2160,7 @@ window.addEventListener("pointerup", onPointerUp);
 
 $("form-password").addEventListener("submit", async (event) => {
   event.preventDefault();
+  loginStarted = true;
   const password = $("office-password").value.trim();
   const button = event.submitter;
   if (button) button.disabled = true;
@@ -2724,8 +2727,10 @@ async function boot() {
     localStorage.removeItem(SESSION);
   }
   const me = await api("/api/office/me");
+  if (loginStarted) return;
   if (me.ok) { applySession(me); return; }
   const status = await api("/api/office/status", { token: "" });
+  if (loginStarted) return;
   if (status.ok && status.hasPassword === false) {
     showGate("管理員還沒設定辦公室密碼。請先到管理頁設定。", { keepPassword: true });
     $("form-password").hidden = true;

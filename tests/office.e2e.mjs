@@ -790,23 +790,20 @@ async function phoneCamera(browser) {
     let best = null;
     for (const item of window.office.furniture) {
       if (item.kind !== "chair" || item.seat) continue;
-      const spot = { id: item.id, x: item.x + 16, y: item.y + 13 };
+      const spot = { id: item.id, x: item.x + 16, y: item.y + 36 };
       const dist = Math.hypot(spot.x - me.x, spot.y - me.y);
       if (!best || dist < best.dist) best = { ...spot, dist };
     }
     return best;
   });
-  // 伺服器偶爾把人拉回原處；沒出現坐下按鈕就再走一次。
+  // Walk with the game's own path: a straight march from above the desk cuts through it,
+  // the client pushes the player around the desk and the server snaps that jump back.
+  await walkTo(page, chair.x, chair.y);
   const sitButton = page.getByRole("button", { name: "坐下" });
-  for (let attempt = 1; ; attempt++) {
-    await march(page, chair.x, chair.y);
-    const shown = await sitButton.waitFor({ timeout: 5000 }).then(() => true, () => false);
-    if (shown) break;
-    if (attempt === 2) {
-      const me = await page.evaluate(() => window.office.me);
-      throw new Error(`走到椅子旁邊卻沒有坐下按鈕 ${JSON.stringify({ chair, me: { x: me.x, y: me.y } })}`);
-    }
-  }
+  await sitButton.waitFor({ timeout: 5000 }).catch(async () => {
+    const me = await page.evaluate(() => window.office.me);
+    throw new Error(`走到椅子旁邊卻沒有坐下按鈕 ${JSON.stringify({ chair, me: { x: me.x, y: me.y } })}`);
+  });
   await sitButton.click();
   await page.waitForFunction((id) => window.office.seat === id, chair.id);
   await settleView(page);
@@ -1550,7 +1547,10 @@ async function chatModeAndCamera(browser) {
   assert((await input.inputValue()) === "draft", "回到行走要保留沒送出的字");
   const from = await spot();
   await talk.keyboard.down("ArrowRight");
-  await talk.waitForFunction((from) => Math.hypot(window.office.me.x - from.x, window.office.me.y - from.y) > 12, from, { timeout: 5000 });
+  await talk.waitForFunction((from) => Math.hypot(window.office.me.x - from.x, window.office.me.y - from.y) > 12, from, { timeout: 5000 }).catch(async (error) => {
+    const seen = await talk.evaluate(() => ({ me: window.office.me, others: window.office.others.map((p) => [p.id, p.x, p.y]), connected: window.office.connected, hidden: document.hidden, active: document.activeElement?.id, cam: window.office.cameraMode }));
+    throw new Error(`離開對話後按右鍵沒有走動 ${JSON.stringify({ from, seen })}`, { cause: error });
+  });
   await talk.keyboard.up("ArrowRight");
   await talk.keyboard.press("t");
   assert(await typing(), "再按 T 應該回到輸入框");
@@ -2875,6 +2875,9 @@ async function reviewFixes(browser) {
 async function main() {
   rmSync(RUN, { recursive: true, force: true });
   mkdirSync(SHOTS, { recursive: true });
+  // Another dev server on this port would answer instead of ours and the run would test the wrong office.
+  const taken = await fetch(`${ORIGIN}/`).then(() => true, () => false);
+  assert(!taken, `連接埠 ${PORT} 已被佔用，請用 E2E_PORT 換一個`);
   const proc = spawn(
     "npx",
     [
