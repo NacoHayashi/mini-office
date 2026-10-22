@@ -854,10 +854,17 @@ function onNet(message) {
       other.face = face;
       other.dir = face;
     }
+    const at = performance.now();
     if (Math.hypot(other.tx - other.x, other.ty - other.y) > 180) {
       other.x = other.tx;
       other.y = other.ty;
+      other.track = [];
     }
+    const track = other.track || (other.track = []);
+    // After a pause, start the glide from where they are drawn now instead of from the old sample.
+    if (!track.length || at - track[track.length - 1].at > 250) track.splice(0, track.length, { x: other.x, y: other.y, at: at - 100 });
+    track.push({ x: message.x, y: message.y, at });
+    if (track.length > 8) track.shift();
   } else if (message.t === "face") {
     const other = state.others.get(message.id);
     const face = finiteDir(message.dir);
@@ -2411,6 +2418,31 @@ function paintActions() {
   });
 }
 
+// Draw coworkers a little in the past and interpolate between their position updates, so they glide.
+const REMOTE_DELAY = 150;
+
+function glideOther(other, now, dt) {
+  const tx = other.tx ?? other.x;
+  const ty = other.ty ?? other.y;
+  const track = other.track;
+  const last = track?.[track.length - 1];
+  if (last && last.x === tx && last.y === ty) {
+    const at = now - REMOTE_DELAY;
+    while (track.length > 2 && track[1].at <= at) track.shift();
+    const a = track[0];
+    const b = track[1] || a;
+    const t = b.at > a.at ? Math.min(1, Math.max(0, (at - a.at) / (b.at - a.at))) : 1;
+    other.x = a.x + (b.x - a.x) * t;
+    other.y = a.y + (b.y - a.y) * t;
+    return;
+  }
+  // Sit, rise and chair glides set the target directly; ease toward it.
+  if (track) track.length = 0;
+  const follow = 1 - Math.exp(-10 * dt);
+  other.x += (tx - other.x) * follow;
+  other.y += (ty - other.y) * follow;
+}
+
 function update(dt) {
   snacks.guard();
   toys.guard();
@@ -2477,11 +2509,8 @@ function update(dt) {
   }
   if (state.dirty) sendMove(false);
   else if (performance.now() - state.sentAt > 120 && (state.me.x !== state.sentX || state.me.y !== state.sentY)) sendMove(true);
-  for (const other of state.others.values()) {
-    other.x += ((other.tx ?? other.x) - other.x) * Math.min(1, dt * 8);
-    other.y += ((other.ty ?? other.y) - other.y) * Math.min(1, dt * 8);
-  }
   const now = performance.now();
+  for (const other of state.others.values()) glideOther(other, now, dt);
   for (const [id, bubble] of state.bubbles) if (bubble.until <= now) state.bubbles.delete(id);
   if (state.asks.some((ask) => ask.until <= Date.now())) {
     state.asks = state.asks.filter((ask) => ask.until > Date.now());

@@ -951,7 +951,7 @@ h1, h2 { margin: 0 0 8px; }
     overflow-y: auto;
   }
   #avatar, #avatar .card.wide, .look-card { max-width: 100%; min-width: 0; }
-  #avatar .card.wide, #gate .card, #help .card { width: min(440px, calc(100% - 16px)); }
+  #avatar .card.wide, #gate .card { width: min(440px, calc(100% - 16px)); }
   #avatar .card.wide {
     height: calc(100% - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
     max-height: calc(100% - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
@@ -1105,4 +1105,17 @@ h1, h2 { margin: 0 0 8px; }
   #unstuck-btn { width: var(--top-item-h); padding: 0; }
   #unstuck-btn svg { display: block; }
   #unstuck-btn .label { display: none; }
+}
+
+/* 「怎麼玩」 card: wider on big screens, never wider than the screen. */
+#help .card {
+  width: min(400px, calc(100vw - 32px));
+  max-height: calc(100% - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+@media (min-width: 768px) {
+  #help .card { width: min(600px, calc(100vw - 32px)); }
+}
+@media (min-width: 1280px) {
+  #help .card { width: min(800px, calc(100vw - 32px)); }
 }

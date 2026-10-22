@@ -1352,16 +1352,22 @@ export function createWorld({ view, preview, labels, fallback }) {
     return actor;
   }
 
-  function animateActor(actor, moving, time, moveFace, talking = false, dt = 0.016, gaze = null) {
+  function animateActor(actor, moving, time, moveFace, talking = false, dt = 0.016, gaze = null, gazeRate = 3.4) {
     const sitting = poseBody(actor, moving, time, dt);
     let heading = actor.userData.heading;
     if (heading == null || Number.isNaN(heading)) heading = Number.isFinite(moveFace) ? moveFace : 0;
-    if (sitting && Number.isFinite(moveFace)) heading = moveFace;
-    else if (moving && Number.isFinite(moveFace)) heading = moveFace;
-    else if (!moving && Number.isFinite(gaze)) {
-      const delta = Math.atan2(Math.sin(gaze - heading), Math.cos(gaze - heading));
-      heading += delta * (1 - Math.exp(-3.4 * Math.max(0.001, dt)));
-    }
+    let target = heading;
+    let rate = gazeRate;
+    if ((sitting || moving) && Number.isFinite(moveFace)) {
+      target = moveFace;
+      rate = 12;
+    } else if (!moving && Number.isFinite(gaze)) target = gaze;
+    // Shortest-angle exponential ease, so turns look the same at any frame rate.
+    const delta = Math.atan2(Math.sin(target - heading), Math.cos(target - heading));
+    const step = Math.max(0.001, dt);
+    // Cap the turn speed too, so an about-face does not start with a big jump.
+    heading += Math.abs(delta) < 0.001 ? delta : Math.sign(delta) * Math.min(Math.abs(delta) * (1 - Math.exp(-rate * step)), 10 * step);
+    heading = Math.atan2(Math.sin(heading), Math.cos(heading));
     actor.userData.heading = heading;
     actor.rotation.y = heading;
     let phase = (time + Math.abs(heading)) % 4.2;
@@ -1457,6 +1463,7 @@ export function createWorld({ view, preview, labels, fallback }) {
       actor.userData.sitting = Boolean(person.seat);
       let moveFace = Number.isFinite(person.face) ? person.face : (actor.userData.face ?? (person.dir === -1 ? Math.PI : 0));
       let gaze = null;
+      let gazeRate = 3.4;
       if (mine) {
         if (!world.faceReady) {
           world.face = Number.isFinite(person.face) ? person.face : moveFace;
@@ -1464,10 +1471,16 @@ export function createWorld({ view, preview, labels, fallback }) {
           if (!Number.isFinite(actor.userData.heading)) actor.userData.heading = world.face;
         }
         const moving = Boolean(person.moving);
+        world.walking = moving;
         if (moving && stepped) {
           moveFace = Math.atan2(dx, dz);
           world.face = moveFace;
         } else if (moving) {
+          moveFace = world.face;
+        } else if (world.mode !== "follow") {
+          // Top-down view: keep the last walking direction instead of turning with the camera.
+          gaze = world.face;
+          gazeRate = 12;
           moveFace = world.face;
         } else if (Number.isFinite(world.heading)) {
           const turn = !person.seat && actor.userData.tasting ? 0 : Math.PI;
@@ -1501,7 +1514,9 @@ export function createWorld({ view, preview, labels, fallback }) {
           }
         }
       }
-      const hop = person.seat ? 11 : person.moving ? Math.abs(Math.sin(time * 11)) * 3.5 : 0;
+      const stride = actor.userData.stride ?? 0;
+      actor.userData.stride = stride + ((person.moving && !person.seat ? 1 : 0) - stride) * (1 - Math.exp(-12 * Math.max(0.001, dt)));
+      const hop = person.seat ? 11 : Math.abs(Math.sin(time * 11)) * 3.5 * actor.userData.stride;
       const radius = bodyRadius(person.look);
       const pinned = person.id === state.me?.id;
       let rx = pinned ? person.x : (actor.userData.rx ?? person.x);
@@ -1516,7 +1531,7 @@ export function createWorld({ view, preview, labels, fallback }) {
       bodies.push({ actor, x: rx, z: rz, r: radius, pin: pinned, hop });
       const bubble = visibleBubble(state, person.id);
       const glide = Boolean(person.seat) && Boolean(person.moving);
-      animateActor(actor, (walking || glide) && gaze == null, time + (person.id || "").length, moveFace, Boolean(bubble.text), dt, gaze);
+      animateActor(actor, (walking || glide) && gaze == null, time + (person.id || "").length, moveFace, Boolean(bubble.text), dt, gaze, gazeRate);
       if (mine) world.shown = actor.userData.heading;
       actor.userData.label = { title: person.displayName || person.id, subtitle: `@${person.id}`, bubble };
     }
@@ -2077,7 +2092,8 @@ export function createWorld({ view, preview, labels, fallback }) {
   let posed = world.mode;
 
   function behindYaw() {
-    return world.face + Math.PI;
+    // Follow the eased body turn, not the raw step direction, so the camera never jitters.
+    return (world.walking && Number.isFinite(world.shown) ? world.shown : world.face) + Math.PI;
   }
 
   function cameraYaw() {
