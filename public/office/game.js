@@ -14,6 +14,10 @@ const WHISPER_NEAR = 112;
 const WHISPER_FAR = 176;
 
 const $ = (id) => document.getElementById(id);
+// version.txt is written by `npm run build`; without it the label reads "dev".
+fetch("/office/version.txt", { cache: "no-cache" })
+  .then((response) => (response.ok ? response.text() : "dev"), () => "dev")
+  .then((text) => document.querySelectorAll(".version").forEach((el) => { el.textContent = text.trim().slice(0, 40) || "dev"; }));
 const canvas = $("view");
 const world = createWorld({
   view: canvas,

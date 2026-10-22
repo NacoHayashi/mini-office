@@ -5,3 +5,4 @@ dist/
 *.log
 test-results/
 .DS_Store
+public/office/version.txt

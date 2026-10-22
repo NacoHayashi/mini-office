@@ -1661,3 +1661,12 @@ test("the page files are not in the public assets and no old page path is writte
   const texts = walk(root).filter((path) => /\.(ts|mjs|js|html|css|md|toml|json|yml|example)$/.test(path) && !path.includes("/vendor/") && !path.endsWith("package-lock.json"));
   for (const path of texts) assert.doesNotMatch(readFileSync(path, "utf8"), oldPage, path.slice(root.length));
 });
+
+test("the version label uses the deploy commit, then git, then just the version", async () => {
+  const { versionLabel } = await import("../scripts/version.mjs");
+  assert.equal(versionLabel("0.5.0", { WORKERS_CI_COMMIT_SHA: "A1B2C3D4E5F6" }, () => "ffffff0"), "v0.5.0 · a1b2c3d");
+  assert.equal(versionLabel("0.5.0", {}, () => "1234567\n"), "v0.5.0 · 1234567");
+  assert.equal(versionLabel("0.5.0", {}, () => ""), "v0.5.0");
+  assert.equal(versionLabel("0.5.0", { WORKERS_CI_COMMIT_SHA: "not a sha" }, () => ""), "v0.5.0");
+  assert.equal(versionLabel(undefined, {}, () => ""), "dev");
+});
