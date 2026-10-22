@@ -22,7 +22,8 @@
 - `src/snacks.ts`：零食櫃與販賣機庫存。
 - `src/pairing.ts`、`src/admin-session.ts`、`src/crypto.ts`、`src/http.ts`：裝置配對、管理員工作階段、共用工具。
 - `public/office/game.js`：辦公室前端主程式（狀態、輸入、UI、連線）。
-- `public/office/world3d.js`：3D 場景、角色、鏡頭。
+- `public/office/world3d.js`：3D 場景、鏡頭。
+- `public/office/avatar.js`：角色外型、配件與動作。
 - `public/office/furnish.js`：載入 Kenney GLB 家具。
 - `public/office/toon.js`：卡通材質與家具描邊。
 - `public/office/snacks.js`、`public/office/lala.js`：零食互動、Lala 櫃檯人員朝向。
