@@ -215,6 +215,15 @@ async function settleHeading(page) {
   return page.evaluate(() => ({ heading: window.office.heading, aim: window.office.aim }));
 }
 
+// Wait until the body has finished turning toward where it is meant to face.
+async function restHeading(page) {
+  await page.waitForFunction(() => {
+    const { heading, aim } = window.office;
+    return Math.abs(Math.atan2(Math.sin(heading - aim), Math.cos(heading - aim))) < 0.02;
+  }, null, { timeout: 5000 });
+  return page.evaluate(() => window.office.heading);
+}
+
 async function openSpots(page, reach) {
   return page.evaluate((reach) => {
     const me = window.office.me;
@@ -263,7 +272,6 @@ async function dragCamera(page, watcher, id) {
   const spot = await openSpots(page, 280);
   const still = await settleHeading(page);
   const cam = await camHeading(page);
-  assert((await lookAway(page)) < 0.3, `站著時應該背對鏡頭，差 ${(await lookAway(page)).toFixed(2)}`);
   await page.mouse.move(spot.left, spot.y, { steps: 6 });
   await page.mouse.move(spot.right, spot.y, { steps: 6 });
   await page.waitForTimeout(700);
@@ -275,19 +283,19 @@ async function dragCamera(page, watcher, id) {
   const turned = await dragAim(page, { x: spot.left, y: spot.y }, { x: spot.left + 200, y: spot.y });
   const camTurned = await camHeading(page);
   assert(angleGap(cam, camTurned) > 0.5, `左鍵拖曳應該轉鏡頭，差 ${angleGap(cam, camTurned).toFixed(2)}`);
-  assert((await lookAway(page)) < 0.3, "轉鏡頭後角色應該背對鏡頭");
-  assert(angleGap(still.heading, turned.heading) > 0.5, "轉鏡頭後角色朝向應該跟著變");
-  const watchTurned = await seeHeading(watcher, id, turned.aim);
+  assert(angleGap(still.heading, turned.heading) < 0.05, `俯瞰轉鏡頭時角色朝向不該跟著變，差 ${angleGap(still.heading, turned.heading).toFixed(2)}`);
+  await seeHeading(watcher, id, still.aim);
   const after = await page.evaluate(() => ({ x: window.office.me.x, y: window.office.me.y }));
   assert(Math.hypot(after.x - before.x, after.y - before.y) < 2, "拖曳轉鏡頭時不該走動");
   const back = await dragAim(page, { x: spot.left + 200, y: spot.y }, { x: spot.left, y: spot.y });
-  const watchBack = await seeHeading(watcher, id, back.aim);
-  assert(angleGap(watchTurned, watchBack) > 0.5, `另一位要看到轉向，差 ${angleGap(watchTurned, watchBack).toFixed(2)}`);
+  assert(angleGap(still.heading, back.heading) < 0.05, "俯瞰轉回鏡頭時角色朝向也不該變");
 
   const camBefore = await camHeading(page);
   const right = await dragAim(page, { x: spot.left, y: spot.y }, { x: spot.left + 200, y: spot.y }, "right");
   assert(angleGap(camBefore, await camHeading(page)) < 0.02, "右鍵拖曳不該轉鏡頭");
   assert(angleGap(right.aim, back.aim) < 0.02, "右鍵拖曳不該轉角色");
+  await walkFacing(page, watcher, id, spot, "d");
+  await walkFacing(page, watcher, id, spot, "a");
   await settleView(page);
   await tiltCheck(page, spot, "俯瞰");
 
@@ -309,6 +317,52 @@ async function dragCamera(page, watcher, id) {
   await page.getByRole("button", { name: "俯瞰" }).click();
   await page.waitForFunction(() => window.office.cameraMode === "iso");
   await settleView(page);
+}
+
+// 俯瞰: walk with a key while the mouse wanders; the body faces the walk and keeps it after stopping.
+async function walkFacing(page, watcher, id, spot, key) {
+  const start = await page.evaluate(() => ({ x: window.office.me.x, y: window.office.me.y }));
+  await page.keyboard.down(key);
+  const turns = [];
+  for (let i = 0; i < 6; i++) {
+    await page.mouse.move(i % 2 ? spot.left : spot.right, spot.y + (i % 3) * 30, { steps: 4 });
+    turns.push(await page.evaluate(() => window.office.heading));
+  }
+  // Read the last real step in the page: sliding along a wall bends the path, so the net move is not the walk direction.
+  const walking = await page.evaluate(() => new Promise((done) => {
+    const frames = [];
+    const tick = () => {
+      frames.push({ x: window.office.me.x, y: window.office.me.y, heading: window.office.heading });
+      if (frames.length < 8) requestAnimationFrame(tick);
+      else done(frames);
+    };
+    requestAnimationFrame(tick);
+  }));
+  await page.keyboard.up(key);
+  const end = walking[walking.length - 1];
+  assert(Math.hypot(end.x - start.x, end.y - start.y) > 20, `按 ${key} 應該走動`);
+  let want = null;
+  let shown = null;
+  for (let i = 1; i < walking.length; i++) {
+    const a = walking[i - 1];
+    const b = walking[i];
+    if (Math.hypot(b.x - a.x, b.y - a.y) > 0.5) {
+      want = Math.atan2(b.x - a.x, b.y - a.y);
+      shown = b.heading;
+    }
+  }
+  assert(want != null, `按 ${key} 時應該一直在走`);
+  assert(angleGap(shown, want) < 0.6, `俯瞰走路時應面向走路方向，差 ${angleGap(shown, want).toFixed(2)}`);
+  for (let i = 1; i < turns.length; i++) assert(angleGap(turns[i], turns[i - 1]) < 1.2, "轉身不該瞬間跳轉");
+  await page.waitForTimeout(150);
+  const stopped = { heading: await restHeading(page) };
+  // A wall slide right before stopping can still bend the last step, so keep facing whatever it ended on.
+  want = await page.evaluate(() => window.office.aim);
+  for (let i = 0; i < 4; i++) await page.mouse.move(i % 2 ? spot.left : spot.right, spot.y - 40 + i * 20, { steps: 4 });
+  await page.waitForTimeout(400);
+  const later = await page.evaluate(() => window.office.heading);
+  assert(angleGap(later, stopped.heading) < 0.05, "停下後移動滑鼠不該轉向");
+  await seeHeading(watcher, id, want);
 }
 
 async function seeHeading(page, id, target) {
@@ -751,6 +805,7 @@ async function phoneCamera(browser) {
     return Math.hypot(me.x - origin.x, me.y - origin.y) > 10;
   }, start, { timeout: 4000 });
   await page.evaluate((origin) => window.office.place(origin.x, origin.y), start);
+  const headingStart = await restHeading(page);
 
   await touchGesture(page, [{ id: 31, from, to: { x: to.x, y: to.y + 70 } }], 0);
   await page.waitForTimeout(300);
@@ -760,7 +815,8 @@ async function phoneCamera(browser) {
   const still = await where();
   assert(Math.hypot(still.x - start.x, still.y - start.y) < 2, "滑動轉鏡頭不該走動");
   await settleHeading(page);
-  assert((await lookAway(page)) < 0.3, "手機轉鏡頭後角色應該背對鏡頭");
+  const turnedHeading = await restHeading(page);
+  assert(angleGap(headingStart, turnedHeading) < 0.05, "手機俯瞰轉鏡頭時角色朝向不該跟著變");
   await shot(page, "phone-swipe-rotate");
 
   const dist = await page.evaluate(() => window.office.cameraDist);
