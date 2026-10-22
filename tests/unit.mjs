@@ -489,7 +489,7 @@ test("old office data upgrades in order without moving furniture people already 
   assert.equal(Number(lamp.x), 30);
   const user = sql.exec(`SELECT x FROM furniture WHERE id = 'item-user'`).toArray()[0];
   assert.equal(Number(user.x), 12);
-  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "8");
+  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "9");
   assert.equal(sql.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'score_hits'`).toArray().length, 1);
   assert.equal(sql.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'admin_sessions'`).toArray().length, 1);
   await migrations.runMigrations(sql, [...defaults, { id: "bin-new", kind: "bin", x: 70, y: 80, rot: 0 }], async (token) => token);
@@ -557,7 +557,7 @@ test("score hit storage is added by the next migration and omitted from backups"
   assert.equal(sql.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'score_hits'`).toArray().length, 0);
   sql.exec(`INSERT INTO meta (key, value) VALUES ('schema_version', '4')`);
   await migrations.runMigrations(sql, [], async (token) => token);
-  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "8");
+  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "9");
   assert.equal(sql.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'score_hits'`).toArray().length, 1);
   sql.exec(`INSERT INTO score_hits (member_id, game, at) VALUES ('momo', 'zip', 1)`);
   const backup = migrations.exportOffice(sql);
@@ -573,7 +573,7 @@ test("admin sessions are added by the following migration, swept when expired, a
   assert.equal(sql.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'admin_sessions'`).toArray().length, 0);
   sql.exec(`INSERT INTO meta (key, value) VALUES ('schema_version', '5')`);
   await migrations.runMigrations(sql, [], async (token) => token);
-  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "8");
+  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "9");
   sql.exec(`INSERT INTO admin_sessions (token_hash, created_at, expires_at) VALUES ('old', 1, 50)`);
   sql.exec(`INSERT INTO admin_sessions (token_hash, created_at, expires_at) VALUES ('fresh', 1, 5000)`);
   sql.exec(`DELETE FROM admin_sessions WHERE expires_at <= ?`, 100);
@@ -1353,29 +1353,33 @@ test("only the old right sofa turns to face the coffee table", async () => {
   sql.exec(`INSERT INTO furniture (id, kind, x, y, rot) VALUES ('sofa-left', 'sofa', 992, 840, 90)`);
   sql.exec(`INSERT INTO furniture (id, kind, x, y, rot) VALUES ('sofa-moved', 'sofa', 1100, 840, 90)`);
   await migrations.runMigrations(sql, [], async (token) => token);
-  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "8");
+  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "9");
   assert.equal(Number(sql.exec(`SELECT rot FROM furniture WHERE id = 'sofa-right'`).toArray()[0].rot), 270);
   assert.equal(Number(sql.exec(`SELECT rot FROM furniture WHERE id = 'sofa-left'`).toArray()[0].rot), 90);
   assert.equal(Number(sql.exec(`SELECT rot FROM furniture WHERE id = 'sofa-moved'`).toArray()[0].rot), 90);
   db.close();
 });
 
-test("both restrooms have toilets and doors, and only the men's room has urinals", () => {
+test("each restroom is one room with two stalls, toilets and doors", () => {
   const office = content.buildOffice();
   const props = office.props;
   const toilets = props.filter((item) => item.kind === "toilet");
   assert.equal(toilets.filter((item) => item.room === "men").length, 2);
   assert.equal(toilets.filter((item) => item.room === "women").length, 2);
-  const urinals = props.filter((item) => item.kind === "urinal");
-  assert.equal(urinals.length, 2);
-  assert.ok(urinals.every((item) => item.room === "men"));
-  assert.equal(props.filter((item) => item.kind === "urinal" && item.room === "women").length, 0);
+  assert.equal(props.filter((item) => item.kind === "urinal").length, 0);
+  for (const id of ["men", "women"]) {
+    const zone = office.zones.find((item) => item.id === id);
+    const box = { x: zone.x * 32, y: zone.y * 32, w: zone.w * 32, h: zone.h * 32 };
+    for (const part of props.filter((item) => item.room === id)) {
+      assert.ok(part.x >= box.x && part.x + part.w <= box.x + box.w && part.y >= box.y && part.y + part.h <= box.y + box.h, part.id || part.kind);
+    }
+  }
   const doors = props.filter((item) => item.kind === "stalldoor").map((item) => item.id).sort();
   assert.deepEqual(doors, ["men-a", "men-b", "women-a", "women-b"]);
   const hall = office.zones.find((item) => item.id === "hall");
   const hallBox = { x: hall.x * 32, y: hall.y * 32, w: hall.w * 32, h: hall.h * 32 };
   for (const prop of props) {
-    if (!["stallwall", "stalldoor", "toilet", "urinal"].includes(prop.kind)) continue;
+    if (!["stallwall", "stalldoor", "toilet"].includes(prop.kind)) continue;
     assert.equal(overlap(prop, hallBox), false, prop.id);
   }
   const room = new stalls.StallDoors();
@@ -1399,7 +1403,7 @@ test("both restrooms have toilets and doors, and only the men's room has urinals
   assert.match(officeRoom, /this\.stalls\.load\(this\.meta\(STALL_META\)\)/);
   assert.match(officeRoom, /setMeta\(STALL_META, this\.stalls\.save\(\)\)/);
   const furnish = readFileSync(join(import.meta.dirname, "../public/office/furnish.js"), "utf8");
-  for (const name of ["toilet", "doorway", "wall"]) {
+  for (const name of ["bath-toilet", "doorway", "wall"]) {
     assert.match(furnish, new RegExp(`"${name}"`));
     assert.equal(existsSync(join(import.meta.dirname, "../public/office/assets/kenney", `${name}.glb`)), true, name);
   }
@@ -1411,8 +1415,9 @@ test("both restrooms have toilets and doors, and only the men's room has urinals
   }
   assert.doesNotMatch(license, /license says 2\.0/);
   const client = readFileSync(join(import.meta.dirname, "../public/office/stalls.js"), "utf8");
-  assert.match(client, /Kenney Furniture Kit/);
-  assert.match(client, /bowl/);
+  assert.match(client, /bath-toilet/);
+  assert.doesNotMatch(client, /urinal/);
+  assert.match(license, /Bubbly Bathroom/);
 });
 
 test("stall doors refuse to swing onto someone standing in the frame", () => {
@@ -1457,19 +1462,19 @@ test("holding a snack at a stall door, E toggles the door instead of eating", ()
   assert.match(bite[1], /stalls\.nearest\(\)/);
 });
 
-test("both restrooms have sinks along the wall, with a mirror above each one", () => {
+test("each restroom has one sink along the wall, with a mirror above it", () => {
   const office = content.buildOffice();
   const sinks = office.props.filter((item) => item.kind === "sink");
   const mirrors = office.props.filter((item) => item.kind === "mirror");
-  assert.equal(sinks.filter((item) => item.room === "men").length, 2);
-  assert.equal(sinks.filter((item) => item.room === "women").length, 2);
+  assert.equal(sinks.filter((item) => item.room === "men").length, 1);
+  assert.equal(sinks.filter((item) => item.room === "women").length, 1);
   assert.ok(sinks.every((item) => item.solid));
   assert.equal(mirrors.length, sinks.length);
   const zones = {
     men: office.zones.find((item) => item.id === "men"),
     women: office.zones.find((item) => item.id === "women"),
   };
-  const stalls = office.props.filter((item) => ["stallwall", "stalldoor", "toilet", "urinal"].includes(item.kind));
+  const stalls = office.props.filter((item) => ["stallwall", "stalldoor", "toilet"].includes(item.kind));
   for (const sink of sinks) {
     const zone = zones[sink.room];
     const box = { x: zone.x * 32, y: zone.y * 32, w: zone.w * 32, h: zone.h * 32 };
@@ -1488,10 +1493,10 @@ test("both restrooms have sinks along the wall, with a mirror above each one", (
     assert.equal(hits.length, 0, other.id);
   }
   const doorTiles = [
+    [3, 25],
     [4, 25],
-    [5, 25],
-    [14, 25],
-    [15, 25],
+    [9, 25],
+    [10, 25],
   ];
   for (const [tx, ty] of doorTiles) {
     const cx = tx * 32 + 16;
@@ -1499,11 +1504,90 @@ test("both restrooms have sinks along the wall, with a mirror above each one", (
     assert.ok(sinks.every((sink) => cx < sink.x || cx > sink.x + sink.w || cy < sink.y || cy > sink.y + sink.h), `${tx},${ty}`);
   }
   const furnish = readFileSync(join(import.meta.dirname, "../public/office/furnish.js"), "utf8");
-  assert.match(furnish, /"bathroomSink"/);
-  assert.equal(existsSync(join(import.meta.dirname, "../public/office/assets/kenney/bathroomSink.glb")), true);
   const world = readFileSync(join(import.meta.dirname, "../public/office/world3d.js"), "utf8");
-  assert.match(world, /bathroomSink/);
-  assert.match(world, /bathroomMirror/);
+  for (const name of ["bath-sink", "bath-mirror"]) {
+    assert.match(furnish, new RegExp(`"${name}"`));
+    assert.match(world, new RegExp(`"${name}"`));
+    assert.equal(existsSync(join(import.meta.dirname, "../public/office/assets/kenney", `${name}.glb`)), true, name);
+  }
+});
+
+test("gym and pantry decor uses real models that exist, fit their rooms and leave a walkway", () => {
+  const office = content.buildOffice();
+  const furnish = readFileSync(join(import.meta.dirname, "../public/office/furnish.js"), "utf8");
+  const license = readFileSync(join(import.meta.dirname, "../public/office/assets/kenney/LICENSE.txt"), "utf8");
+  const decor = office.props.filter((item) => item.kind === "decor");
+  const gym = office.zones.find((item) => item.id === "gym");
+  assert.equal(gym.name, "健身房");
+  for (const item of decor) {
+    assert.ok(item.model && item.tall > 0, JSON.stringify(item));
+    assert.match(furnish, new RegExp(`"${item.model}"`), item.model);
+    assert.equal(existsSync(join(import.meta.dirname, "../public/office/assets/kenney", `${item.model}.glb`)), true, item.model);
+    assert.ok(license.includes(`${item.model}.glb`), `${item.model} 沒有寫進 LICENSE`);
+  }
+  const inGym = decor.filter((item) => item.x >= gym.x * 32 && item.x + item.w <= (gym.x + gym.w) * 32 && item.y >= gym.y * 32 && item.y + item.h <= (gym.y + gym.h) * 32);
+  for (const model of ["gym-treadmill", "gym-bike", "gym-dumbbells", "gym-kettlebells", "gym-bench", "gym-mats", "gym-ball", "gym-cooler"]) {
+    assert.ok(inGym.some((item) => item.model === model), model);
+  }
+  assert.equal(inGym.filter((item) => item.model === "gym-treadmill").length, 2);
+  for (const model of ["kitchenSink", "kitchenCabinetUpper", "kitchenFridge", "kitchenMicrowave", "kitchen-toaster", "kitchen-kettle", "kitchen-mug", "kitchen-dishrack", "tableRound", "stoolBar", "rugRectangle", "trashcan", "pottedPlant", "bookcaseOpenLow"]) {
+    assert.ok(decor.some((item) => item.model === model), model);
+  }
+  // Every open floor tile in the new rooms is reachable from spawn (stall insides sit behind closed doors).
+  const blocked = (tx, ty) => {
+    if (office.walls[ty]?.[tx] !== "0") return true;
+    const cx = tx * 32 + 16;
+    const cy = ty * 32 + 16;
+    return office.props.some((prop) => prop.solid && cx >= prop.x && cx <= prop.x + prop.w && cy >= prop.y && cy <= prop.y + prop.h);
+  };
+  const start = [Math.floor(office.spawn.x / 32), Math.floor(office.spawn.y / 32)];
+  const seen = new Set([start.join(",")]);
+  const queue = [start];
+  for (let i = 0; i < queue.length; i++) {
+    const [x, y] = queue[i];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const key = `${x + dx},${y + dy}`;
+      if (seen.has(key) || blocked(x + dx, y + dy)) continue;
+      seen.add(key);
+      queue.push([x + dx, y + dy]);
+    }
+  }
+  for (const id of ["men", "women", "gym", "pantry"]) {
+    const zone = office.zones.find((item) => item.id === id);
+    let open = 0;
+    for (let ty = zone.y; ty < zone.y + zone.h; ty++) {
+      for (let tx = zone.x; tx < zone.x + zone.w; tx++) {
+        if ((id === "men" || id === "women") && ty * 32 + 16 >= 968) continue;
+        if (blocked(tx, ty)) continue;
+        open += 1;
+        assert.ok(seen.has(`${tx},${ty}`), `${id} ${tx},${ty} 走不到`);
+      }
+    }
+    assert.ok(open >= 10, `${id} 空地太少`);
+  }
+});
+
+test("the pantry coffee machine and water cooler move off the new counter only if never moved", async () => {
+  const { db, sql } = officeDb();
+  sql.transaction(() => migrations.ensureTables(sql));
+  sql.exec(`INSERT INTO meta (key, value) VALUES ('schema_version', '8')`);
+  sql.exec(`INSERT INTO furniture (id, kind, x, y, rot) VALUES ('coffee-1', 'coffee', 712, 932, 0)`);
+  sql.exec(`INSERT INTO furniture (id, kind, x, y, rot) VALUES ('water-1', 'water', 300, 400, 0)`);
+  await migrations.runMigrations(sql, [], async (token) => token);
+  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "9");
+  const coffee = sql.exec(`SELECT x, y FROM furniture WHERE id = 'coffee-1'`).toArray()[0];
+  const water = sql.exec(`SELECT x, y FROM furniture WHERE id = 'water-1'`).toArray()[0];
+  const office = content.buildOffice();
+  const fresh = office.furniture.find((item) => item.id === "coffee-1");
+  assert.deepEqual([Number(coffee.x), Number(coffee.y)], [fresh.x, fresh.y]);
+  assert.deepEqual([Number(water.x), Number(water.y)], [300, 400]);
+  for (const id of ["coffee-1", "water-1"]) {
+    const item = office.furniture.find((entry) => entry.id === id);
+    const size = content.furnitureSize(item.kind, item.rot);
+    const box = { x: item.x, y: item.y, w: size.w, h: size.h };
+    assert.ok(office.props.every((prop) => !prop.solid || !overlap(box, prop)), `${id} 壓到茶水間擺設`);
+  }
+  db.close();
 });
 
 test("snack cabinet keeps its body and the drinks machine can use the Kenney vending model", () => {

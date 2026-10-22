@@ -1,7 +1,7 @@
 import { readMeta, writeMeta } from "./crypto";
 import { migrateLegacyBindings, type LegacyMember } from "./pairing";
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 9;
 
 export type FurnitureSeed = { id: string; kind: string; x: number; y: number; rot: number };
 
@@ -285,6 +285,15 @@ export async function runMigrations(
       writeMeta(sql, "schema_version", "8");
     });
     version = 8;
+  }
+  if (version < 9) {
+    sql.transaction(() => {
+      // The pantry got a new counter; pieces still at their old default spots move clear of it.
+      sql.exec(`UPDATE furniture SET x = 898, y = 936 WHERE id = 'coffee-1' AND kind = 'coffee' AND x = 712 AND y = 932`);
+      sql.exec(`UPDATE furniture SET x = 676, y = 806 WHERE id = 'water-1' AND kind = 'water' AND x = 836 AND y = 904`);
+      writeMeta(sql, "schema_version", "9");
+    });
+    version = 9;
   }
   sql.transaction(() => addSystemFurniture(sql, defaults));
 }

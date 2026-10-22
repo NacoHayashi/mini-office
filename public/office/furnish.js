@@ -2,6 +2,11 @@ import * as THREE from "./vendor/three.module.js";
 import { GLTFLoader } from "./vendor/gltf.js";
 import { addOutline, edgeColor, stepGradient } from "./toon.js";
 
+// Tiny Treats (Bubbly Bathroom, Charming Kitchen) and One More Rep share one
+// small recolored atlas per pack, so they load like the textured Kenney kits.
+const TINY_TREATS = ["bath-toilet", "bath-sink", "bath-mirror", "bath-mat", "bath-roll", "bath-plant", "kitchen-kettle", "kitchen-mug", "kitchen-dishrack", "kitchen-toaster"];
+const ONE_MORE_REP = ["gym-treadmill", "gym-bike", "gym-dumbbells", "gym-kettlebells", "gym-bench", "gym-mats", "gym-ball", "gym-cooler"];
+
 const FILES = [
   "desk",
   "chairDesk",
@@ -19,7 +24,13 @@ const FILES = [
   "rugRounded",
   "kitchenCabinet",
   "kitchenCoffeeMachine",
-  "kitchenFridgeSmall",
+  "kitchenSink",
+  "kitchenCabinetUpper",
+  "kitchenFridge",
+  "kitchenMicrowave",
+  "tableRound",
+  "stoolBar",
+  "rugRectangle",
   "trashcan",
   "speaker",
   "computerScreen",
@@ -27,9 +38,6 @@ const FILES = [
   "computerMouse",
   "laptop",
   "pillow",
-  "bathroomMirror",
-  "bathroomSink",
-  "toilet",
   "doorway",
   "wall",
   "vending-machine",
@@ -43,6 +51,10 @@ const FILES = [
   "tool-hammer",
   "ball-red",
   "vehicle-racer",
+  "chocolate",
+  "soda-can",
+  ...TINY_TREATS,
+  ...ONE_MORE_REP,
 ];
 
 const PALETTE = {
@@ -65,9 +77,9 @@ const PALETTE = {
 
 // Only the big pieces get an edge line. Small desk clutter stays plain so a
 // busy office does not double its draw calls on phones.
-const OUTLINED = new Set(["desk", "loungeSofa", "bookcaseOpen", "bookcaseOpenLow", "kitchenCabinet", "table", "cabinetTelevision", "kitchenFridgeSmall", "toilet", "bathroomSink", "doorway", "wall"]);
-// Mini Arcade, Food Kit, Survival Kit, Minigolf Kit and Toy Car Kit ship a colormap instead of Furniture Kit material names.
-const TEXTURED = new Set(["vending-machine", "plate", "cookie", "cupcake", "cup-tea", "donut", "tool-hammer", "ball-red", "vehicle-racer"]);
+const OUTLINED = new Set(["desk", "loungeSofa", "bookcaseOpen", "bookcaseOpenLow", "kitchenCabinet", "kitchenSink", "kitchenFridge", "table", "cabinetTelevision", "bath-toilet", "bath-sink", "gym-treadmill", "doorway", "wall"]);
+// Mini Arcade, Food Kit, Survival Kit, Minigolf Kit, Toy Car Kit and the itch.io packs ship a colormap instead of Furniture Kit material names.
+const TEXTURED = new Set(["vending-machine", "plate", "cookie", "cupcake", "cup-tea", "donut", "tool-hammer", "ball-red", "vehicle-racer", "chocolate", "soda-can", ...TINY_TREATS, ...ONE_MORE_REP]);
 const ramp = stepGradient([178, 224, 255]);
 
 function recolor(root, file) {
@@ -76,6 +88,11 @@ function recolor(root, file) {
     if (node.isMesh) meshes.push(node);
   });
   for (const node of meshes) {
+    // One More Rep is flat shaded and ships without normals: unweld to get hard edges back.
+    if (!node.geometry.attributes.normal) {
+      node.geometry = node.geometry.toNonIndexed();
+      node.geometry.computeVertexNormals();
+    }
     const source = Array.isArray(node.material) ? node.material : [node.material];
     const next = source.map((material) => {
       if (TEXTURED.has(file)) {

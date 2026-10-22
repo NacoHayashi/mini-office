@@ -2127,7 +2127,7 @@ async function restrooms(browser) {
       menSinks: sinks.filter((item) => item.room === "men").length,
       womenSinks: sinks.filter((item) => item.room === "women").length,
       sinkBlocks: sinks.every((sink) => window.office.blocked(sink.x + sink.w / 2, sink.y + sink.h / 2)),
-      doorClear: !window.office.blocked(160, 820) && !window.office.blocked(480, 820),
+      doorClear: !window.office.blocked(128, 820) && !window.office.blocked(320, 820),
     };
   });
   assert(layout.sofas.find((item) => item.id === "sofa-left").rot === 90, "左邊沙發應朝東");
@@ -2136,8 +2136,8 @@ async function restrooms(browser) {
     assert(sofa.dot > 0 && Math.abs(sofa.side) < 1e-6, `${sofa.id} 沒有面向茶几`);
   }
   assert(layout.menToilets === 2 && layout.womenToilets === 2, "兩邊廁所都要有馬桶");
-  assert(layout.urinals === 2 && layout.womenUrinals === 0, "小便斗只該在男廁");
-  assert(layout.menSinks === 2 && layout.womenSinks === 2, "兩邊廁所都要有洗手台");
+  assert(layout.urinals === 0 && layout.womenUrinals === 0, "廁所改成兩間隔間，不該再有小便斗");
+  assert(layout.menSinks === 1 && layout.womenSinks === 1, "兩邊廁所各有一個洗手台");
   assert(layout.sinkBlocks, "洗手台應該擋路");
   assert(layout.doorClear, "廁所門口不該被洗手台擋住");
 
@@ -2159,8 +2159,9 @@ async function restrooms(browser) {
   await shot(page, "sofa-after");
 
   await march(page, 1088, 336);
-  await march(page, 176, 336);
-  await march(page, 176, 860);
+  await march(page, 128, 336);
+  await march(page, 128, 860);
+  await march(page, 96, 860);
   await page.evaluate(() => window.office.setView({ yaw: Math.PI, pitch: 0.62, dist: 520 }));
   await settleView(page);
   await page.waitForTimeout(250);
@@ -2170,7 +2171,7 @@ async function restrooms(browser) {
   await page.evaluate(() => window.office.setView({ yaw: Math.PI, pitch: 0.55, dist: 620 }));
   await settleView(page);
   await shot(page, "mens-restroom");
-  await march(page, 96, 930);
+  await march(page, 72, 930);
   await page.evaluate(() => window.office.setView({ yaw: Math.PI * 0.85, pitch: 0.78, dist: 320 }));
   await settleView(page);
   await page.waitForFunction(() => (document.querySelector("#hint")?.textContent || "").includes("開門"));
@@ -2185,7 +2186,7 @@ async function restrooms(browser) {
   await page.waitForFunction(() => window.office.stallDoors.some((door) => door.id === "men-a" && door.open));
   await witness.waitForFunction(() => window.office.stallDoors.some((door) => door.id === "men-a" && door.open));
   const opened = await page.evaluate(() => ({
-    gap: window.office.blocked(96, 973),
+    gap: window.office.blocked(72, 973),
     leaf: window.office.blocked(53, 920),
   }));
   assert(opened.gap === false, "開門後門口應該走得過");
@@ -2193,21 +2194,27 @@ async function restrooms(browser) {
   await page.waitForTimeout(700);
   await shot(page, "stall-open");
 
-  await march(page, 170, 955);
-  await march(witness, 176, 336);
-  await march(witness, 176, 860);
-  await march(witness, 96, 973);
-  await witness.waitForFunction(() => Math.hypot(window.office.me.x - 96, window.office.me.y - 973) < 4, null, { timeout: 5000 }).catch(async (error) => {
+  // The room is five tiles wide, so the knocker waits in the office while the other player
+  // steps into the door frame, then comes back to knock from beside it.
+  await march(page, 128, 740);
+  await march(page, 260, 740);
+  await march(witness, 128, 336);
+  await march(witness, 128, 860);
+  await march(witness, 62, 973);
+  await witness.waitForFunction(() => Math.hypot(window.office.me.x - 62, window.office.me.y - 973) < 4, null, { timeout: 5000 }).catch(async (error) => {
     const where = await witness.evaluate(() => ({
       me: { x: window.office.me.x, y: window.office.me.y },
       doors: window.office.stallDoors,
-      blocked: [[96, 860], [96, 925], [96, 950], [96, 973]].map(([x, y]) => window.office.blocked(x, y)),
+      blocked: [[62, 860], [62, 925], [62, 950], [62, 973]].map(([x, y]) => window.office.blocked(x, y)),
     }));
     throw new Error(`第二名玩家走不進門框 ${JSON.stringify(where)}`, { cause: error });
   });
+  await march(page, 128, 740);
+  await march(page, 128, 860);
+  await march(page, 111, 928);
   await page.waitForFunction(() => {
     const other = window.office.others.find((item) => item.id === "stall2");
-    return other && Math.hypot((other.tx ?? other.x) - 96, (other.ty ?? other.y) - 973) < 4;
+    return other && Math.hypot((other.tx ?? other.x) - 62, (other.ty ?? other.y) - 973) < 4;
   });
   await page.waitForTimeout(400);
   await page.keyboard.press("e");
@@ -2215,26 +2222,30 @@ async function restrooms(browser) {
   await page.waitForTimeout(500);
   assert(await page.evaluate(() => window.office.stallDoors.some((door) => door.id === "men-a" && door.open)), "有人在門框時不該關門");
   assert(await witness.evaluate(() => window.office.stallDoors.some((door) => door.id === "men-a" && door.open)), "門框裡的人看到門被關上");
-  await march(witness, 96, 900);
+  await march(page, 128, 740);
+  await march(page, 260, 740);
+  await march(witness, 62, 900);
   await witness.waitForTimeout(400);
   const freed = await witness.evaluate(() => ({ x: window.office.me.x, y: window.office.me.y }));
-  assert(Math.hypot(freed.x - 96, freed.y - 900) < 4, `門框裡的人應該走得出來 ${JSON.stringify(freed)}`);
-  await march(witness, 176, 860);
+  assert(Math.hypot(freed.x - 62, freed.y - 900) < 4, `門框裡的人應該走得出來 ${JSON.stringify(freed)}`);
+  await march(witness, 128, 336);
+  await march(page, 128, 740);
+  await march(page, 128, 860);
+  await march(page, 72, 930);
   await page.waitForTimeout(400);
   await page.keyboard.press("e");
   await page.waitForFunction(() => window.office.stallDoors.some((door) => door.id === "men-a" && !door.open));
   await witness.waitForFunction(() => window.office.stallDoors.some((door) => door.id === "men-a" && !door.open));
   const shut = await page.evaluate(() => ({
-    gap: window.office.blocked(96, 973),
+    gap: window.office.blocked(72, 973),
     leaf: window.office.blocked(53, 920),
   }));
   assert(shut.gap === true, "關門後門口應該擋住");
   assert(shut.leaf === false, "關上的門不該擋在外面");
 
-  await march(witness, 176, 336);
   await march(witness, 640, 336);
   const cabinet = await page.evaluate(() => window.office.snackSpot("snackcab"));
-  await march(page, 176, 336);
+  await march(page, 128, 336);
   await march(page, 1088, 336);
   await march(page, 1088, 820);
   await walkTo(page, cabinet.standX, cabinet.standY);
@@ -2244,9 +2255,9 @@ async function restrooms(browser) {
   await page.waitForFunction((id) => window.office.snackCarry === id && window.office.snackPhase() < 0, treat);
   await march(page, 1088, 820);
   await march(page, 1088, 336);
-  await march(page, 176, 336);
-  await march(page, 176, 860);
-  await march(page, 170, 955);
+  await march(page, 128, 336);
+  await march(page, 128, 860);
+  await march(page, 72, 930);
   await page.waitForFunction(() => (document.querySelector("#hint")?.textContent || "").includes("按 E 開門"), null, { timeout: 5000 }).catch(async (error) => {
     const where = await page.evaluate(() => ({
       me: { x: window.office.me.x, y: window.office.me.y },
@@ -2265,12 +2276,26 @@ async function restrooms(browser) {
   await page.keyboard.press("e");
   await page.waitForFunction(() => window.office.stallDoors.some((door) => door.id === "men-a" && !door.open));
 
-  await march(page, 176, 336);
-  await march(page, 496, 336);
-  await march(page, 496, 900);
+  await march(page, 128, 860);
+  await march(page, 128, 336);
+  await march(page, 320, 336);
+  await march(page, 320, 880);
+  await page.waitForFunction(() => window.office.zone === "女廁");
   await page.evaluate(() => window.office.setView({ yaw: Math.PI, pitch: 0.55, dist: 620 }));
   await settleView(page);
   await shot(page, "womens-restroom");
+  await march(page, 320, 336);
+  await march(page, 496, 336);
+  await march(page, 496, 900);
+  await page.waitForFunction(() => window.office.zone === "健身房");
+  await settleView(page);
+  await shot(page, "gym");
+  await march(page, 496, 336);
+  await march(page, 768, 336);
+  await march(page, 768, 860);
+  await page.waitForFunction(() => window.office.zone === "茶水間");
+  await settleView(page);
+  await shot(page, "pantry");
   await witness.close();
   await witnessContext.close();
   await page.close();
@@ -2282,11 +2307,15 @@ async function restrooms(browser) {
   await phone.getByRole("button", { name: "進入辦公室" }).click();
   await ready(phone);
   await assetsReady(phone);
-  await march(phone, 176, 860);
-  await march(phone, 96, 930);
+  // Path-find through the narrow restroom door; straight-line steps can be snapped back on a busy runner.
+  await walkTo(phone, 128, 880);
+  await march(phone, 72, 940);
   await phone.evaluate(() => window.office.setView({ yaw: Math.PI * 0.85, pitch: 0.8, dist: 340 }));
   await settleView(phone);
-  await phone.waitForFunction(() => window.office.actions.includes("開門"));
+  await phone.waitForFunction(() => window.office.actions.includes("開門"), null, { timeout: 8000 }).catch(async (error) => {
+    const where = await phone.evaluate(() => ({ me: window.office.me && { x: window.office.me.x, y: window.office.me.y }, actions: window.office.actions, doors: window.office.stallDoors }));
+    throw new Error(`手機在隔間門口沒有開門按鈕 ${JSON.stringify(where)}`, { cause: error });
+  });
   await shot(phone, "stall-phone");
   await phone.close();
   await phoneContext.close();

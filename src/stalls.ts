@@ -9,7 +9,7 @@ export type StallRoom = "men" | "women";
 
 export type StallPart = {
   id: string;
-  kind: "stallwall" | "stalldoor" | "toilet" | "urinal";
+  kind: "stallwall" | "stalldoor" | "toilet";
   room: StallRoom;
   x: number;
   y: number;
@@ -26,7 +26,7 @@ export type StallPart = {
 
 type Box = { x: number; y: number; w: number; h: number };
 
-const DOOR_W = 96;
+const DOOR_W = 64;
 const DOOR_H = 10;
 const WALL_T = 8;
 const STALL_Y = 968;
@@ -90,38 +90,15 @@ function stallAt(room: StallRoom, id: string, x: number, tint: string): StallPar
   ];
 }
 
+// Each restroom is five tiles wide, so its two stalls sit wall to wall.
+// Butter-yellow partitions follow the Bubbly Bathroom look in both rooms.
 export function stallProps(): StallPart[] {
-  const men = "#d7ecff";
-  const women = "#ffd6ea";
+  const tint = "#ffe9a8";
   return [
-    ...stallAt("men", "men-a", 40, men),
-    ...stallAt("men", "men-b", 200, men),
-    ...stallAt("women", "women-a", 360, women),
-    ...stallAt("women", "women-b", 520, women),
-    {
-      id: "men-urinal-a",
-      kind: "urinal",
-      room: "men",
-      x: 36,
-      y: 808,
-      w: 24,
-      h: 26,
-      solid: true,
-      rot: 90,
-      tint: men,
-    },
-    {
-      id: "men-urinal-b",
-      kind: "urinal",
-      room: "men",
-      x: 36,
-      y: 844,
-      w: 24,
-      h: 26,
-      solid: true,
-      rot: 90,
-      tint: men,
-    },
+    ...stallAt("men", "men-a", 32, tint),
+    ...stallAt("men", "men-b", 112, tint),
+    ...stallAt("women", "women-a", 224, tint),
+    ...stallAt("women", "women-b", 304, tint),
   ];
 }
 

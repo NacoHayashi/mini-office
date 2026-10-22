@@ -1,4 +1,5 @@
 import gameList from "./games.json";
+import { roomDecor } from "./rooms";
 import { stallProps } from "./stalls";
 
 export const TILE = 32;
@@ -94,6 +95,10 @@ export type Prop = {
   openY?: number;
   openW?: number;
   openH?: number;
+  /** Decor only: GLB name, height cap and lift off the floor. */
+  model?: string;
+  tall?: number;
+  lift?: number;
 };
 
 export type Furn = {
@@ -838,13 +843,16 @@ function makeWalls(): string[] {
   carve(33, 9);
 
   hline(24, 0, COLS - 1);
-  vline(10, 24, ROWS - 1);
+  vline(6, 24, ROWS - 1);
+  vline(12, 24, ROWS - 1);
   vline(20, 24, ROWS - 1);
   vline(29, 24, ROWS - 1);
+  carve(3, 24);
   carve(4, 24);
-  carve(5, 24);
-  carve(14, 24);
+  carve(9, 24);
+  carve(10, 24);
   carve(15, 24);
+  carve(16, 24);
   carve(23, 24);
   carve(24, 24);
   carve(33, 24);
@@ -853,15 +861,13 @@ function makeWalls(): string[] {
   return grid.map((row) => row.join(""));
 }
 
-// Two wash basins on the north wall, to the right of each restroom door.
-// The door occupies tiles x=4–5 (men) and x=14–15 (women). Sinks stay clear
-// of that opening, the stall doors, and the men's urinals on the west wall.
+// One wash basin on the north wall, to the left of each restroom door.
+// The door occupies tiles x=3–4 (men) and x=9–10 (women). Sinks stay clear
+// of that opening and of the stall doors.
 function washProps(): Prop[] {
   const sinks = [
-    { id: "men-sink-a", room: "men" as const, x: 208 },
-    { id: "men-sink-b", room: "men" as const, x: 264 },
-    { id: "women-sink-a", room: "women" as const, x: 528 },
-    { id: "women-sink-b", room: "women" as const, x: 584 },
+    { id: "men-sink", room: "men" as const, x: 40 },
+    { id: "women-sink", room: "women" as const, x: 232 },
   ];
   const props: Prop[] = [];
   for (const sink of sinks) {
@@ -945,8 +951,9 @@ export function buildOffice(): OfficeMap {
     { id: "game", name: "遊戲室", x: 28, y: 1, w: 11, h: 8, floor: "#f0e4ff" },
     { id: "hall", name: "走廊", x: 1, y: 10, w: 38, h: 2, floor: "#f7f0e4" },
     { id: "office", name: "辦公區", x: 1, y: 12, w: 38, h: 12, floor: "#fbf6ee" },
-    { id: "men", name: "男廁", x: 1, y: 25, w: 9, h: 8, floor: "#d9eeff" },
-    { id: "women", name: "女廁", x: 11, y: 25, w: 9, h: 8, floor: "#ffe0f0" },
+    { id: "men", name: "男廁", x: 1, y: 25, w: 5, h: 8, floor: "#d9eeff" },
+    { id: "women", name: "女廁", x: 7, y: 25, w: 5, h: 8, floor: "#ffe0f0" },
+    { id: "gym", name: "健身房", x: 13, y: 25, w: 7, h: 8, floor: "#e8f0ff" },
     { id: "pantry", name: "茶水間", x: 21, y: 25, w: 8, h: 8, floor: "#fff1d4" },
     { id: "sofa", name: "沙發區", x: 30, y: 25, w: 9, h: 8, floor: "#e5f7ef" },
   ];
@@ -971,18 +978,18 @@ export function buildOffice(): OfficeMap {
     { kind: "beanbag", solid: true, x: 36 * TILE + 4, y: 4 * TILE + 10, w: 46, h: 42 },
     { kind: "tv", solid: false, x: 37 * TILE + 18, y: 3 * TILE, w: 28, h: 22 },
     { kind: "scoreboard", solid: true, use: "scores", label: "排行榜", x: 32 * TILE + 8, y: 6 * TILE + 8, w: 64, h: 24 },
-    { kind: "pantry", solid: true, ...tileBox(22, 30, 5, 1) },
     ...stallProps(),
     ...washProps(),
+    ...roomDecor(),
     ...[3, 9, 18, 23, 31, 36].map((tx) => ({ kind: "window", solid: false, x: tx * TILE, y: 4, w: 48, h: 24 })),
-    { kind: "frame", solid: false, tint: "#f7c6d4", x: 8 * TILE, y: 23 * TILE - 10, w: 28, h: 8 },
     { kind: "frame", solid: false, tint: "#d9c8f5", x: 22 * TILE, y: 23 * TILE - 10, w: 28, h: 8 },
     { kind: "frame", solid: false, tint: "#ffe08a", x: 32 * TILE, y: 25 * TILE + 10, w: 28, h: 8 },
     sign(224, 10, "接待處"),
     sign(21 * TILE, 10, "會議室"),
     sign(33 * TILE, 10, "遊戲室"),
-    sign(5 * TILE, 23, "男廁"),
-    sign(15 * TILE, 23, "女廁"),
+    sign(4 * TILE, 23, "男廁"),
+    sign(10 * TILE, 23, "女廁"),
+    sign(16 * TILE, 23, "健身房"),
     sign(24 * TILE, 23, "茶水間"),
     sign(34 * TILE, 23, "沙發區"),
     ...desks,
@@ -1009,8 +1016,8 @@ export function buildOffice(): OfficeMap {
     { id: "console-1", kind: "console", x: 30 * TILE, y: 6 * TILE, rot: 0 },
     { id: "speaker-1", kind: "speaker", x: 36 * TILE + 4, y: 6 * TILE, rot: 0 },
     { id: "cactus-1", kind: "cactus", x: 37 * TILE + 4, y: 6 * TILE + 4, rot: 0 },
-    { id: "coffee-1", kind: "coffee", x: 22 * TILE + 8, y: 29 * TILE + 4, rot: 0 },
-    { id: "water-1", kind: "water", x: 26 * TILE + 4, y: 28 * TILE + 8, rot: 0 },
+    { id: "coffee-1", kind: "coffee", x: 898, y: 936, rot: 0 },
+    { id: "water-1", kind: "water", x: 676, y: 806, rot: 0 },
     { id: "sofa-left", kind: "sofa", x: 31 * TILE, y: 26 * TILE + 8, rot: 90 },
     { id: "sofa-right", kind: "sofa", x: 36 * TILE + 8, y: 26 * TILE + 8, rot: 270 },
     { id: "sofa-table", kind: "coffeetable", x: 33 * TILE + 4, y: 28 * TILE, rot: 0 },
@@ -1046,9 +1053,11 @@ export function buildOffice(): OfficeMap {
     ["街機", 29 * TILE + 34, 2 * TILE + 4 + 72 + 16],
     ["排行榜", 32 * TILE + 40, 6 * TILE + 48],
     ["辦公區", 8 * TILE + 16, 17 * TILE + 16],
-    ["男廁", 5 * TILE + 16, 27 * TILE + 16],
-    ["女廁", 15 * TILE + 16, 27 * TILE + 16],
-    ["茶水間", 25 * TILE + 16, 27 * TILE + 16],
+    ["男廁", 4 * TILE, 27 * TILE + 16],
+    ["女廁", 10 * TILE, 27 * TILE + 16],
+    ["健身房", 16 * TILE, 30 * TILE + 16],
+    ["茶水間", 24 * TILE, 30 * TILE + 16],
+    ["流理台", 26 * TILE + 16, 27 * TILE + 16],
     ["沙發區", 34 * TILE + 8, 26 * TILE + 8],
   ];
   for (const [name, x, y] of visits) {
