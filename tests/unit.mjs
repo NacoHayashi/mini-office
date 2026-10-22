@@ -210,6 +210,28 @@ test("已存的造型遇到下架的配件色會退回預設，不會整個失�
   assert.equal(content.readStoredLook("custom", JSON.stringify({ ...cat, colors: { ...cat.colors, accessory: "#7aa6ee" } })).colors.accessory, "#7aa6ee");
 });
 
+test("帽子、頸部、手上配件各有自己的顏色", () => {
+  const cat = content.presetLook("cat");
+  for (const slot of ["head", "neck", "held"]) assert.equal(cat.colors[slot], "#f3eee3");
+  const look = content.normalizeLook({ ...cat, colors: { ...cat.colors, head: "#F26D9A", neck: "#7aa6ee", held: "#3cb85c" } });
+  assert.deepEqual([look.colors.head, look.colors.neck, look.colors.held], ["#f26d9a", "#7aa6ee", "#3cb85c"]);
+  assert.equal(content.normalizeLook({ ...cat, colors: { ...cat.colors, neck: "#112233" } }), null);
+  assert.equal(content.normalizeLook({ ...cat, colors: { ...cat.colors, held: 3 } }), null);
+});
+
+test("舊造型只有一個配件色時，每個配件都沿用它", () => {
+  const { head, neck, held, ...old } = content.presetLook("cat").colors;
+  const look = content.normalizeLook({ body: "bean", colors: { ...old, accessory: "#c9b6ff" } });
+  assert.deepEqual([look.colors.accessory, look.colors.head, look.colors.neck, look.colors.held], ["#c9b6ff", "#c9b6ff", "#c9b6ff", "#c9b6ff"]);
+  const mixed = content.normalizeLook({ colors: { accessory: "#c9b6ff", head: "#ffe08a" } });
+  assert.deepEqual([mixed.colors.head, mixed.colors.neck, mixed.colors.held], ["#ffe08a", "#c9b6ff", "#c9b6ff"]);
+  const none = content.normalizeLook({ body: "bean" });
+  assert.deepEqual([none.colors.head, none.colors.neck, none.colors.held], ["#f3eee3", "#f3eee3", "#f3eee3"]);
+  const stored = content.readStoredLook("custom", JSON.stringify({ v: 2, colors: { accessory: "#7aa6ee", neck: "#112233" } }));
+  assert.ok(stored, "下架的配件色不該讓造型失效");
+  assert.deepEqual([stored.colors.head, stored.colors.neck, stored.colors.held], ["#7aa6ee", "#f3eee3", "#7aa6ee"]);
+});
+
 test("眼鏡框維持深色，不跟著配件顏色", () => {
   const world = readFileSync(join(import.meta.dirname, "../public/office/avatar.js"), "utf8");
   const glasses = world.slice(world.indexOf('if (glasses === "round"'), world.indexOf('addMesh(parent, geo("lensFill"'));

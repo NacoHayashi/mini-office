@@ -141,9 +141,13 @@ export const ACCESSORY_SWATCHES = [
   "#3cb85c",
 ] as const;
 
-export type LookColors = Record<(typeof COLOR_KEYS)[number], string> & {
-  accessory: string;
-};
+/** Each accessory slot has its own color, keyed by the slot name. */
+export const ACCESSORY_SLOTS = ["head", "neck", "held"] as const;
+
+export type LookColors = Record<(typeof COLOR_KEYS)[number], string> &
+  Record<(typeof ACCESSORY_SLOTS)[number], string> & {
+    accessory: string;
+  };
 
 export type Look = {
   v: 2;
@@ -261,8 +265,9 @@ const COLOR_LABELS = [
   { id: "blush", label: "腮紅" },
 ];
 
-function colors(partial: Omit<LookColors, "accessory">): LookColors {
-  return { ...partial, accessory: DEFAULT_ACCESSORY_COLOR };
+function colors(partial: Record<(typeof COLOR_KEYS)[number], string>): LookColors {
+  const d = DEFAULT_ACCESSORY_COLOR;
+  return { ...partial, accessory: d, head: d, neck: d, held: d };
 }
 
 const PRESET_LOOKS: Record<string, Omit<Look, "v">> = {
@@ -428,9 +433,9 @@ export function presetLook(animal: string): Look | null {
 const HEX = /^#[0-9a-fA-F]{6}$/;
 const ACCESSORY_COLOR_SET = new Set<string>(ACCESSORY_SWATCHES);
 
-function readAccessoryColor(bag: Record<string, unknown> | null, stored: boolean): string | null {
-  if (!bag || !("accessory" in bag)) return DEFAULT_ACCESSORY_COLOR;
-  const value = bag.accessory;
+function readAccessoryColor(bag: Record<string, unknown> | null, key: string, fallback: string, stored: boolean): string | null {
+  if (!bag || !(key in bag)) return fallback;
+  const value = bag[key];
   const color = typeof value === "string" ? value.toLowerCase() : "";
   if (ACCESSORY_COLOR_SET.has(color)) return color;
   // A swatch dropped from the palette later must not wipe a saved look; only fresh input is strict.
@@ -475,9 +480,15 @@ export function normalizeLook(input: unknown, stored = false): Look | null {
       colorsOut[key] = value.toLowerCase();
     }
   }
-  const accessory = readAccessoryColor(bag, stored);
+  const accessory = readAccessoryColor(bag, "accessory", DEFAULT_ACCESSORY_COLOR, stored);
   if (!accessory) return null;
   colorsOut.accessory = accessory;
+  // Older looks only have `accessory`, so a missing slot color inherits it.
+  for (const slot of ACCESSORY_SLOTS) {
+    const color = readAccessoryColor(bag, slot, accessory, stored);
+    if (!color) return null;
+    colorsOut[slot] = color;
+  }
   return { v: 2, body, ears, tail, belly, eyes, mouth, blush, marking, head, face, neck, held, colors: colorsOut };
 }
 

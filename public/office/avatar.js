@@ -91,7 +91,10 @@ export function createAvatars({ mat, geo, addMesh, smoothSphere, blobTexture }) 
       tip: cssColor(colors.tip, 0x4a1c0c),
       tailColor: cssColor(colors.tail, body),
       blushColor: cssColor(colors.blush, 0xf4a0b5),
-      accessoryColor: cssColor(colors.accessory, 0xf3eee3),
+      // Older looks only carry one shared accessory color.
+      headColor: cssColor(colors.head || colors.accessory, 0xf3eee3),
+      neckColor: cssColor(colors.neck || colors.accessory, 0xf3eee3),
+      heldColor: cssColor(colors.held || colors.accessory, 0xf3eee3),
       earKind: src.ears || "point",
       tail: src.tail || "none",
       eyes: src.eyes || "dot",
@@ -535,7 +538,8 @@ export function createAvatars({ mat, geo, addMesh, smoothSphere, blobTexture }) 
     const extra = style.neck;
     const shift = metrics.shift || 0;
     const hy = (y) => y + shift;
-    const dye = creatureMat(style.accessoryColor);
+    const dye = creatureMat(style.headColor);
+    const neckDye = creatureMat(style.neckColor);
     if (hat === "beanie") addMesh(parent, smoothSphere(7.2, 28, 22), dye, 0, hy(33.6), 0.6, { sy: 0.58 });
     if (hat === "ribbon") {
       addMesh(parent, smoothSphere(3.2, 16, 12), dye, -4.4, hy(34.6), 1.4, { sx: 1.55, sy: 0.7, sz: 0.46, rotZ: 0.35 });
@@ -566,7 +570,7 @@ export function createAvatars({ mat, geo, addMesh, smoothSphere, blobTexture }) 
     }
     if (glasses === "round" || glasses === "sun") {
       const lens = glasses === "sun" ? mat(0x3a3550, { transparent: true, opacity: 0.72, mapName: "sun" }) : mat(0xfff6ea, { transparent: true, opacity: 0.18, mapName: "lens" });
-      // Frames stay dark so glasses still read on pale faces; they do not follow the accessory color.
+      // Frames stay dark so glasses still read on pale faces; they do not follow any accessory color.
       const ring = mat(0x8a6248, { mapName: "ring" });
       addMesh(parent, geo("lens", () => new THREE.TorusGeometry(1.7, 0.14, 8, 24)), ring, -2.7, hy(27.6), 9.15);
       addMesh(parent, geo("lens", () => new THREE.TorusGeometry(1.7, 0.14, 8, 24)), ring, 2.7, hy(27.6), 9.15);
@@ -574,13 +578,13 @@ export function createAvatars({ mat, geo, addMesh, smoothSphere, blobTexture }) 
       addMesh(parent, geo("lensFill", () => new THREE.CircleGeometry(1.45, 22)), lens, -2.7, hy(27.6), 9.3);
       addMesh(parent, geo("lensFill", () => new THREE.CircleGeometry(1.45, 22)), lens, 2.7, hy(27.6), 9.3);
     }
-    if (extra === "scarf") addScarf(parent, dye, metrics);
+    if (extra === "scarf") addScarf(parent, neckDye, metrics);
     if (extra === "bowtie") {
       const spec = metrics.spec;
       const y = 14.6 + shift * 0.35 - spec.center;
-      onBody(parent, spec, smoothSphere(2.0, 14, 12), dye, -2.5, y, 0.5, { sx: 1.4, sy: 0.72, sz: 0.38 });
-      onBody(parent, spec, smoothSphere(2.0, 14, 12), dye, 2.5, y, 0.5, { sx: 1.4, sy: 0.72, sz: 0.38 });
-      onBody(parent, spec, smoothSphere(1.0, 12, 10), dye, 0, y, 0.6, { sz: 0.7 });
+      onBody(parent, spec, smoothSphere(2.0, 14, 12), neckDye, -2.5, y, 0.5, { sx: 1.4, sy: 0.72, sz: 0.38 });
+      onBody(parent, spec, smoothSphere(2.0, 14, 12), neckDye, 2.5, y, 0.5, { sx: 1.4, sy: 0.72, sz: 0.38 });
+      onBody(parent, spec, smoothSphere(1.0, 12, 10), neckDye, 0, y, 0.6, { sz: 0.7 });
     }
     if (hat === "headphones") {
       addMesh(parent, geo("band", () => new THREE.TorusGeometry(8.6, 0.5, 8, 24)), mat(0x6a4a68), 0, hy(31.5), 0.2, { rotX: Math.PI / 2 });
@@ -588,12 +592,12 @@ export function createAvatars({ mat, geo, addMesh, smoothSphere, blobTexture }) 
       addMesh(parent, geo("earcup", () => new THREE.CylinderGeometry(2.4, 2.4, 1.7, 16)), dye, 13.2, hy(22.5), 0.4, { rotZ: Math.PI / 2 });
     }
     if (style.held === "mug") {
-      parent.add(makeMug(metrics, style.accessoryColor));
+      parent.add(makeMug(metrics, style.heldColor));
     } else if (style.held === "balloon") {
       const pocket = new THREE.Group();
       pocket.userData.pocket = true;
       addMesh(pocket, geo("string", () => new THREE.CylinderGeometry(0.08, 0.08, 10, 6)), mat(0x6a4a68), 11.5, 22, 4);
-      addMesh(pocket, smoothSphere(3.2, 16, 12), dye, 11.5, 29.5, 4);
+      addMesh(pocket, smoothSphere(3.2, 16, 12), creatureMat(style.heldColor), 11.5, 29.5, 4);
       parent.add(pocket);
     }
   }
@@ -625,7 +629,7 @@ export function createAvatars({ mat, geo, addMesh, smoothSphere, blobTexture }) 
     onBody(parent, spec, end, material, 3.9, lift - 3.2, 0.6, { sz: 0.5, rotZ: -0.08 });
   }
 
-  // Held mug. Body and handle follow the accessory color (missing means
+  // Held mug. Body and handle follow the held-item color (missing means
   // #F3EEE3 warm ivory). Toon steps keep that ivory apart from the pale floor
   // and pale characters. The band stays a quiet blush. Coffee and steam stay.
   function makeMug(metrics, bodyColor) {

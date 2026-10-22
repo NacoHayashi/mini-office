@@ -486,10 +486,12 @@ function buildLookEditor() {
   }
   if (state.lookTab === "gear") {
     addChoiceGroup(panel, "頭上", "head", catalog.parts?.head || []);
+    addAccessorySwatches(panel, catalog, "head", "頭上顏色");
     addChoiceGroup(panel, "臉上", "face", catalog.parts?.face || []);
     addChoiceGroup(panel, "頸部", "neck", catalog.parts?.neck || []);
+    addAccessorySwatches(panel, catalog, "neck", "頸部顏色");
     addChoiceGroup(panel, "手上", "held", catalog.parts?.held || []);
-    addAccessorySwatches(panel, catalog);
+    addAccessorySwatches(panel, catalog, "held", "手上顏色");
     return;
   }
   const titles = { body: "體型", ears: "耳朵", tail: "尾巴" };
@@ -519,23 +521,25 @@ function addChoiceGroup(panel, label, key, options) {
   panel.appendChild(row);
 }
 
-function addAccessorySwatches(panel, catalog) {
+function addAccessorySwatches(panel, catalog, slot, label) {
+  if (!state.look?.[slot] || state.look[slot] === "none") return;
   const title = document.createElement("p");
   title.className = "slot-label";
-  title.textContent = "配件顏色";
+  title.textContent = label;
   panel.appendChild(title);
   const swatches = document.createElement("div");
   swatches.className = "swatches accessory-swatches";
   const options = catalog.accessorySwatches?.length ? catalog.accessorySwatches : ["#f3eee3"];
-  const current = String(state.look?.colors?.accessory || "#f3eee3").toLowerCase();
+  const colors = state.look?.colors || {};
+  const current = String(colors[slot] || colors.accessory || "#f3eee3").toLowerCase();
   for (const swatch of options) {
     const button = document.createElement("button");
     button.type = "button";
     button.style.background = swatch;
-    button.setAttribute("aria-label", `配件顏色 ${swatch}`);
+    button.setAttribute("aria-label", `${label} ${swatch}`);
     button.setAttribute("aria-pressed", String(current === String(swatch).toLowerCase()));
     button.addEventListener("click", () => {
-      state.look = { ...state.look, colors: { ...(state.look?.colors || {}), accessory: swatch } };
+      state.look = { ...state.look, colors: { ...(state.look?.colors || {}), [slot]: swatch } };
       state.avatarAnimal = "custom";
       buildLookEditor();
       paintPreview();
@@ -607,7 +611,9 @@ function randomLook() {
   const colors = {};
   for (const item of catalog.colors || []) colors[item.id] = color();
   const accessorySwatches = catalog.accessorySwatches?.length ? catalog.accessorySwatches : ["#f3eee3"];
-  colors.accessory = accessorySwatches[Math.floor(Math.random() * accessorySwatches.length)];
+  for (const slot of ["accessory", "head", "neck", "held"]) {
+    colors[slot] = accessorySwatches[Math.floor(Math.random() * accessorySwatches.length)];
+  }
   state.look = {
     v: 2,
     body: pick(catalog.parts.body),
