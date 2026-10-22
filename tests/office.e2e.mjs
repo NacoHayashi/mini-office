@@ -2457,6 +2457,72 @@ async function panelRoutes() {
   }
 }
 
+async function guestOffice(browser) {
+  const telegram = await (await fetch(`${ORIGIN}/api/office/telegram`)).json();
+  assert(telegram.bot === null, `沒設定機器人時不該開放 Telegram ${JSON.stringify(telegram)}`);
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const page = await context.newPage();
+  await page.goto(`${ORIGIN}/`);
+  assert(await page.locator("#tg-login").isHidden(), "沒設定機器人時 Telegram 按鈕應該藏起來");
+  const setPassword = await fetch(`${ORIGIN}/api/office/admin/password`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${ADMIN}`, origin: ORIGIN },
+    body: JSON.stringify({ password: PASS }),
+  });
+  assert(setPassword.ok, `訪客測試沒設好密碼 ${setPassword.status}`);
+  const guestButton = page.getByRole("button", { name: "以訪客身分逛逛" });
+  await guestButton.click();
+  await page.locator("#gate-error", { hasText: "請先輸入辦公室密碼" }).waitFor();
+  await page.getByLabel("辦公室密碼").fill("wrong-pass");
+  await guestButton.click();
+  await page.locator("#gate-error", { hasText: "密碼不正確" }).waitFor();
+  assert(await page.locator("#gate").isVisible(), "密碼錯誤時訪客不該進得來");
+  await page.getByLabel("辦公室密碼").fill(PASS);
+  await shot(page, "guest-password");
+  await guestButton.click();
+  await page.waitForFunction(() => window.office?.ready);
+  const me = await page.evaluate(() => window.office.me);
+  assert(me.id.startsWith("guest-") && /^訪客\d+$/.test(me.displayName), `訪客身分不對 ${JSON.stringify(me)}`);
+  assert(await page.locator("#tg-upgrade-open").isHidden(), "沒設定機器人時不該出現改用 Telegram");
+  const upgrade = await page.evaluate(async () => (await fetch("/api/office/telegram/upgrade", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status);
+  assert(upgrade === 404, `沒設定機器人時不能升級 ${upgrade}`);
+  await page.locator("#chat-input").fill("訪客你好");
+  await page.locator("#chat-input").press("Enter");
+  await page.waitForFunction((id) => window.office.bubbles.some((bubble) => bubble.id === id && bubble.text === "訪客你好"), me.id);
+  const blocked = await page.evaluate(() => new Promise((resolve) => {
+    const socket = window.office.socket;
+    const seen = [];
+    const on = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.t !== "error") return;
+      seen.push(message.message);
+      if (seen.length < 3) return;
+      socket.removeEventListener("message", on);
+      resolve(seen);
+    };
+    socket.addEventListener("message", on);
+    socket.send(JSON.stringify({ t: "edit", on: true }));
+    socket.send(JSON.stringify({ t: "furn", op: "home" }));
+    socket.send(JSON.stringify({ t: "profile", displayName: "核心" }));
+  }));
+  assert(blocked.every((text) => text.startsWith("訪客不能")), `訪客不該能調整設備或改名 ${JSON.stringify(blocked)}`);
+  const sideDoors = await page.evaluate(async () => {
+    const pair = await fetch("/api/office/pair/code", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    const admin = await fetch("/api/office/admin/overview");
+    return { pair: pair.status, admin: admin.status };
+  });
+  assert(sideDoors.pair === 403 && sideDoors.admin === 401, `訪客不該進管理或加裝置 ${JSON.stringify(sideDoors)}`);
+  const headers = { authorization: `Bearer ${ADMIN}` };
+  const listed = await (await fetch(`${ORIGIN}/api/office/admin/overview`, { headers })).json();
+  assert(listed.members.some((member) => member.id === me.id), "管理頁應看得到訪客");
+  await page.locator("#clock-btn").click();
+  await page.locator("#clockout-yes").click();
+  await page.locator("#gate").waitFor();
+  const after = await (await fetch(`${ORIGIN}/api/office/admin/overview`, { headers })).json();
+  assert(!after.members.some((member) => member.id === me.id), "訪客下班後應該被清掉");
+  await context.close();
+}
+
 async function coreOffice(browser) {
   await panelRoutes();
   const setPassword = await fetch(`${ORIGIN}/api/office/admin/password`, {
@@ -3063,6 +3129,7 @@ async function main() {
       await seatedCamera(browser);
       publishShots();
       await coreOffice(browser);
+      await guestOffice(browser);
       await chairHome(browser);
       await restrooms(browser);
       await sofaAndUnstuck(browser);

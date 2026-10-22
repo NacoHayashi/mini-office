@@ -29,3 +29,4 @@ Cloudflare Git 建置維持：
 
 1. 到管理頁設定辦公室密碼。
 2. 把密碼給要進來的人。
+3. 想開放 Telegram 登入時，用 `npx wrangler secret put TELEGRAM_BOT_TOKEN` 設定機器人權杖，在 Worker 設定加入純文字變數 `TELEGRAM_BOT_USERNAME`（機器人名稱），並在 BotFather 用 `/setdomain` 設成你的網域；沒設定就不會出現 Telegram 按鈕。

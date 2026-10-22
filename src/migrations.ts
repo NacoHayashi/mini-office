@@ -1,7 +1,7 @@
 import { readMeta, writeMeta } from "./crypto";
 import { migrateLegacyBindings, type LegacyMember } from "./pairing";
 
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 10;
 
 export type FurnitureSeed = { id: string; kind: string; x: number; y: number; rot: number };
 
@@ -24,6 +24,8 @@ export type OfficeBackup = {
   sessions: Array<Record<string, unknown>>;
   furniture: Array<Record<string, unknown>>;
   scores: Array<Record<string, unknown>>;
+  guests?: Array<Record<string, unknown>>;
+  telegram?: Array<Record<string, unknown>>;
 };
 
 function readVersion(sql: OfficeSql): number {
@@ -295,6 +297,22 @@ export async function runMigrations(
     });
     version = 9;
   }
+  if (version < 10) {
+    sql.transaction(() => {
+      sql.exec(`CREATE TABLE IF NOT EXISTS telegram_members (
+        telegram_id TEXT PRIMARY KEY,
+        member_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )`);
+      sql.exec(`CREATE TABLE IF NOT EXISTS guests (
+        member_id TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL,
+        last_seen INTEGER NOT NULL
+      )`);
+      writeMeta(sql, "schema_version", "10");
+    });
+    version = 10;
+  }
   sql.transaction(() => addSystemFurniture(sql, defaults));
 }
 
@@ -332,6 +350,8 @@ export function exportOffice(sql: OfficeSql): OfficeBackup {
     ),
     furniture: rows(sql, `SELECT id, kind, x, y, rot FROM furniture ORDER BY id`),
     scores: rows(sql, `SELECT member_id, game, score, updated_at FROM scores ORDER BY member_id, game`),
+    guests: rows(sql, `SELECT member_id, created_at, last_seen FROM guests ORDER BY member_id`),
+    telegram: rows(sql, `SELECT telegram_id, member_id, created_at FROM telegram_members ORDER BY telegram_id`),
   };
 }
 
@@ -360,6 +380,8 @@ function backupShape(raw: unknown):
       sessions: Array<Record<string, unknown>>;
       furniture: Array<Record<string, unknown>>;
       scores: Array<Record<string, unknown>>;
+      guests: Array<Record<string, unknown>>;
+      telegram: Array<Record<string, unknown>>;
     } {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, error: "備份格式不對" };
   const body = raw as Record<string, unknown>;
@@ -374,7 +396,10 @@ function backupShape(raw: unknown):
   const sessions = asRows(body.sessions);
   const furniture = asRows(body.furniture);
   const scores = asRows(body.scores);
-  if (!meta || !members || !devices || !sessions || !furniture || !scores) return { ok: false, error: "備份格式不對" };
+  // Backups made before guest and Telegram login have neither list.
+  const guests = asRows(body.guests ?? []);
+  const telegram = asRows(body.telegram ?? []);
+  if (!meta || !members || !devices || !sessions || !furniture || !scores || !guests || !telegram) return { ok: false, error: "備份格式不對" };
   if (meta.some((row) => typeof row.key !== "string" || typeof row.value !== "string" || !row.key)) {
     return { ok: false, error: "備份格式不對" };
   }
@@ -427,7 +452,22 @@ function backupShape(raw: unknown):
     scoreKeys.push(`${memberId}\0${game}`);
   }
   if (!unique(scoreKeys)) return { ok: false, error: "備份格式不對" };
-  return { ok: true, meta, members, devices, sessions, furniture, scores };
+  const guestIds: string[] = [];
+  for (const row of guests) {
+    const memberId = text(row, "member_id");
+    if (!memberId || !known.has(memberId)) return { ok: false, error: "備份格式不對" };
+    guestIds.push(memberId);
+  }
+  if (!unique(guestIds)) return { ok: false, error: "備份格式不對" };
+  const telegramIds: string[] = [];
+  for (const row of telegram) {
+    const telegramId = text(row, "telegram_id");
+    const memberId = text(row, "member_id");
+    if (!telegramId || !memberId || !known.has(memberId)) return { ok: false, error: "備份格式不對" };
+    telegramIds.push(telegramId);
+  }
+  if (!unique(telegramIds)) return { ok: false, error: "備份格式不對" };
+  return { ok: true, meta, members, devices, sessions, furniture, scores, guests, telegram };
 }
 
 function deleteIfPresent(sql: OfficeSql, table: "score_hits" | "admin_sessions") {
@@ -467,6 +507,8 @@ export function restoreOffice(sql: OfficeSql, raw: unknown): { ok: true } | { ok
   try {
     sql.transaction(() => {
       ensureTables(sql);
+      sql.exec(`DELETE FROM guests`);
+      sql.exec(`DELETE FROM telegram_members`);
       sql.exec(`DELETE FROM scores`);
       sql.exec(`DELETE FROM member_sessions`);
       sql.exec(`DELETE FROM member_devices`);
@@ -532,6 +574,22 @@ export function restoreOffice(sql: OfficeSql, raw: unknown): { ok: true } | { ok
           row.game,
           Number(row.score) || 0,
           Number(row.updated_at) || 0,
+        );
+      }
+      for (const row of parsed.guests) {
+        sql.exec(
+          `INSERT INTO guests (member_id, created_at, last_seen) VALUES (?, ?, ?)`,
+          row.member_id,
+          Number(row.created_at) || 0,
+          Number(row.last_seen) || 0,
+        );
+      }
+      for (const row of parsed.telegram) {
+        sql.exec(
+          `INSERT INTO telegram_members (telegram_id, member_id, created_at) VALUES (?, ?, ?)`,
+          row.telegram_id,
+          row.member_id,
+          Number(row.created_at) || 0,
         );
       }
       clearStoredSessions(sql);

@@ -3,6 +3,7 @@ import { tokenEqual } from "./crypto";
 import { json, readCookie } from "./http";
 import { bearer, OfficeRoom, type Env } from "./office-room";
 import { panelResponse } from "./panel";
+import { TELEGRAM_MARKER, telegramRoute } from "./telegram-login";
 
 export { OfficeRoom };
 
@@ -31,6 +32,7 @@ function stamp(request: Request, trustedAdmin: boolean): Request {
   headers.delete(ADMIN_MARKER);
   headers.delete(GATE_MARKER);
   headers.delete(IP_MARKER);
+  headers.delete(TELEGRAM_MARKER);
   headers.set(IP_MARKER, clientIp(request));
   if (trustedAdmin) headers.set(ADMIN_MARKER, "1");
   return new Request(request, { headers });
@@ -107,6 +109,7 @@ export default {
         if (!sameOrigin(request, url)) return json({ error: "來源不符" }, 403);
       }
       const stub = env.OFFICE.get(env.OFFICE.idFromName("main"));
+      if (url.pathname.startsWith("/api/office/telegram")) return await telegramRoute(stamp(request, false), env, stub);
       if (url.pathname.startsWith("/api/office/admin/")) {
         const expected = configuredSeed(env);
         if (!expected) return json({ error: "伺服器尚未完成設定。" }, 503);

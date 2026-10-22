@@ -55,12 +55,29 @@ import {
   normalizePairCode,
   randomPairCode,
 } from "./pairing";
+import {
+  dropGuest,
+  guestAnimal,
+  guestBlocks,
+  guestCount,
+  guestName,
+  GUEST_MAX,
+  GUEST_PREFIX,
+  isGuest,
+  reservedLoginId,
+  sweepGuests,
+  touchGuest,
+  upgradeGuest,
+} from "./guest-login";
+import { TELEGRAM_MARKER } from "./telegram-login";
 
 export interface Env {
   OFFICE: DurableObjectNamespace;
   ASSETS: Fetcher;
   APP_SEED?: string;
   APP_SLUG?: string;
+  TELEGRAM_BOT_TOKEN?: string;
+  TELEGRAM_BOT_USERNAME?: string;
 }
 
 type MemberRow = {
@@ -94,6 +111,7 @@ type Att = {
   lastPersist: number;
   deviceKey: string;
   session: string;
+  guest?: boolean;
 };
 
 // A member who has not picked an animal yet keeps a socket open only to send
@@ -117,7 +135,7 @@ type ChairLive = {
   lastSave: number;
 };
 
-type ByeReason = "removed" | "kicked" | "password" | "replaced" | "elsewhere" | "logout" | "device" | "restored";
+type ByeReason = "removed" | "kicked" | "password" | "replaced" | "elsewhere" | "logout" | "device" | "restored" | "upgraded";
 
 const OFFICE = buildOffice();
 
@@ -233,6 +251,9 @@ export class OfficeRoom implements DurableObject {
       if (path === "/api/office/register" && request.method === "POST") return await this.register(request);
       if (path === "/api/office/pair" && request.method === "POST") return await this.pair(request);
       if (path === "/api/office/pair/code" && request.method === "POST") return await this.pairCode(request);
+      if (path === "/api/office/guest" && request.method === "POST") return await this.guestLogin(request);
+      if (path === "/api/office/telegram/enter" && request.method === "POST") return await this.telegramEnter(request);
+      if (path === "/api/office/telegram/upgrade" && request.method === "POST") return await this.telegramUpgrade(request);
       if (path === "/api/office/session" && request.method === "POST") return await this.adoptSession(request);
       if (path === "/api/office/logout" && request.method === "POST") return await this.logout(request);
       if (path === "/api/office/me" && request.method === "GET") return await this.me(request);
@@ -283,6 +304,11 @@ export class OfficeRoom implements DurableObject {
     if ("setup" in held) return;
     const att = held;
     const kind = body.t;
+    const guestNo = att.guest ? guestBlocks(kind, body, att.name) : null;
+    if (guestNo) {
+      this.send(ws, { t: "error", message: guestNo });
+      return;
+    }
     if (kind === "move") this.onMove(ws, att, body);
     else if (kind === "face") this.onFace(ws, att, body);
     else if (kind === "chat") this.onChat(ws, att, body);
@@ -303,6 +329,7 @@ export class OfficeRoom implements DurableObject {
   async webSocketClose(ws: WebSocket): Promise<void> {
     const att = this.attOf(ws);
     if (!att) return;
+    if (att.guest) touchGuest(this.officeSql(), att.id);
     const still = this.ctx.getWebSockets(att.id).some((other) => other !== ws);
     if (still) return;
     this.releaseSeat(att.id);
@@ -393,6 +420,7 @@ export class OfficeRoom implements DurableObject {
   private async verifyOfficePassword(
     request: Request,
     kind: "login" | "register" | "pair",
+    read?: Record<string, unknown>,
   ): Promise<
     | { ok: true; body: Record<string, unknown>; ip: string; password: string; legacy: boolean }
     | { ok: false; response: Response }
@@ -400,7 +428,7 @@ export class OfficeRoom implements DurableObject {
     if (!this.hasPassword()) return { ok: false, response: json({ error: "管理員還沒設定辦公室密碼" }, 503) };
     const ip = this.clientIp(request);
     if (this.failureLimited(kind, ip)) return { ok: false, response: json({ error: "嘗試太多次，請稍後再試" }, 429) };
-    const body = await readJson(request);
+    const body = read ?? (await readJson(request));
     if (!body) return { ok: false, response: json({ error: "格式不對" }, 400) };
     const password = checkPassword(body.password);
     if (!password.ok) {
@@ -486,9 +514,8 @@ export class OfficeRoom implements DurableObject {
     if (!id.ok) return json({ error: id.error }, 400);
     const displayName = normalizeName(body.displayName);
     if (!displayName) return json({ error: "請輸入顯示名稱" }, 400);
-    if (this.memberById(id.id)) return json({ error: "這個 ID 已經有人使用" }, 409);
-    const count = this.sql.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM members`).one();
-    if (Number(count?.n ?? 0) >= MAX_MEMBERS) return json({ error: "辦公室人數已滿" }, 400);
+    if (this.memberById(id.id) || reservedLoginId(id.id)) return json({ error: "這個 ID 已經有人使用" }, 409);
+    if (this.memberCount() >= MAX_MEMBERS) return json({ error: "辦公室人數已滿" }, 400);
     const spot = this.spawnFor(id.id);
     const now = Date.now();
     const token = randomToken(32);
@@ -522,6 +549,7 @@ export class OfficeRoom implements DurableObject {
     await readJson(request);
     const member = await this.memberFromCookie(request);
     if (!member) return this.unauthorized(request);
+    if (isGuest(this.officeSql(), member.id)) return json({ error: "訪客不能加入新裝置" }, 403);
     const code = randomPairCode();
     const ticket = freshPair(await hashPairCode(code), Date.now());
     this.sql.exec(`DELETE FROM pair_codes WHERE member_id = ?`, member.id);
@@ -578,6 +606,132 @@ export class OfficeRoom implements DurableObject {
     );
   }
 
+  private memberCount(): number {
+    const count = this.sql.exec<{ n: number }>(`SELECT COUNT(*) AS n FROM members WHERE id NOT IN (SELECT member_id FROM guests)`).one();
+    return Number(count?.n ?? 0);
+  }
+
+  private freshId(prefix: string): string {
+    let id = `${prefix}${randomToken(4)}`;
+    while (this.memberById(id)) id = `${prefix}${randomToken(4)}`;
+    return id;
+  }
+
+  private addMember(id: string, displayName: string, animal: string | null, look: Look | null) {
+    const spot = this.spawnFor(id);
+    this.sql.exec(
+      `INSERT INTO members
+        (id, display_name, animal, accessories, pos_x, pos_y, pos_dir, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+      id,
+      displayName,
+      animal,
+      look ? JSON.stringify(look) : "{}",
+      spot.x,
+      spot.y,
+      Date.now(),
+    );
+  }
+
+  // Only the Worker reaches this, after it has checked the Telegram signature.
+  private async telegramEnter(request: Request): Promise<Response> {
+    if (request.headers.get(TELEGRAM_MARKER) !== "1") return json({ error: "未授權" }, 401);
+    const body = await readJson(request);
+    if (!body) return json({ error: "格式不對" }, 400);
+    const telegramId = typeof body.telegramId === "string" ? body.telegramId : "";
+    const name = normalizeName(body.name);
+    if (!/^[1-9]\d{0,19}$/.test(telegramId) || !name) return json({ error: "格式不對" }, 400);
+    const deviceKey = normalizeDeviceKey(body.deviceKey);
+    if (!deviceKey) return json({ error: "裝置驗證失敗，請重新整理" }, 400);
+    const linked = this.sql
+      .exec<MemberRow>(`SELECT m.* FROM telegram_members t JOIN members m ON m.id = t.member_id WHERE t.telegram_id = ?`, telegramId)
+      .toArray()[0];
+    let id = linked?.id;
+    if (!id) {
+      // Linking a new Telegram account needs the office password, with the same throttle as password login.
+      if (!body.password) return json({ error: "第一次用 Telegram 登入，請先輸入辦公室密碼", needsPassword: true }, 401);
+      const gate = await this.verifyOfficePassword(request, "login", body);
+      if (!gate.ok) return gate.response;
+      this.clearFailures("login", gate.ip);
+      if (gate.legacy) await this.upgradePassword(gate.password);
+      if (this.memberCount() >= MAX_MEMBERS) return json({ error: "辦公室人數已滿" }, 400);
+      id = this.freshId("tg-");
+      this.addMember(id, name, null, null);
+      this.sql.exec(`DELETE FROM telegram_members WHERE telegram_id = ?`, telegramId);
+      this.sql.exec(`INSERT INTO telegram_members (telegram_id, member_id, created_at) VALUES (?, ?, ?)`, telegramId, id, Date.now());
+    }
+    if (!this.memberByDevice(deviceKey)) this.bindDevice(id, deviceKey, Date.now());
+    const token = await this.issueSession(id, deviceKey);
+    const member = this.memberById(id);
+    if (!member) return json({ error: "登入失敗" }, 500);
+    return json({ profile: this.profile(member), catalog: catalog() }, 200, { "set-cookie": sessionCookie(token) });
+  }
+
+  // A signed-in guest switching to Telegram. Only the Worker reaches this, after
+  // checking the signature; the office password is always needed here.
+  private async telegramUpgrade(request: Request): Promise<Response> {
+    if (request.headers.get(TELEGRAM_MARKER) !== "1") return json({ error: "未授權" }, 401);
+    const token = readCookie(request, SESSION_COOKIE);
+    const session = token ? await sessionHash(token) : "";
+    const before = this.memberBySession(session);
+    if (!before) return this.unauthorized(request);
+    if (!isGuest(this.officeSql(), before.id)) return json({ error: "只有訪客可以改用 Telegram" }, 403);
+    const body = await readJson(request);
+    if (!body) return json({ error: "格式不對" }, 400);
+    const telegramId = typeof body.telegramId === "string" ? body.telegramId : "";
+    if (!/^[1-9]\d{0,19}$/.test(telegramId) || !normalizeName(body.name)) return json({ error: "格式不對" }, 400);
+    const deviceKey = normalizeDeviceKey(body.deviceKey);
+    if (!deviceKey) return json({ error: "裝置驗證失敗，請重新整理" }, 400);
+    if (!body.password) return json({ error: "請先輸入辦公室密碼", needsPassword: true }, 401);
+    const gate = await this.verifyOfficePassword(request, "login", body);
+    if (!gate.ok) return gate.response;
+    this.clearFailures("login", gate.ip);
+    if (gate.legacy) await this.upgradePassword(gate.password);
+    // Checked again after the awaits: the guest may have clocked out meanwhile.
+    const guest = this.memberBySession(session);
+    if (!guest || !isGuest(this.officeSql(), guest.id)) return this.unauthorized(request);
+    const linked = this.sql.exec(`SELECT member_id FROM telegram_members t JOIN members m ON m.id = t.member_id WHERE t.telegram_id = ?`, telegramId).toArray()[0];
+    if (!linked && this.memberCount() >= MAX_MEMBERS) return json({ error: "辦公室人數已滿" }, 400);
+    const sockets = this.ctx.getWebSockets(guest.id);
+    // Save where the guest is standing so a new account keeps the spot.
+    for (const ws of sockets) {
+      const att = this.attOf(ws);
+      if (att) this.persist(att);
+    }
+    const id = upgradeGuest(this.officeSql(), guest.id, telegramId, this.freshId("tg-"));
+    for (const ws of sockets) this.goodbye(ws, "upgraded");
+    if (!this.memberByDevice(deviceKey)) this.bindDevice(id, deviceKey, Date.now());
+    const fresh = await this.issueSession(id, deviceKey);
+    const member = this.memberById(id);
+    if (!member) return json({ error: "登入失敗" }, 500);
+    return json({ profile: this.profile(member), catalog: catalog() }, 200, { "set-cookie": sessionCookie(fresh) });
+  }
+
+  private async guestLogin(request: Request): Promise<Response> {
+    const gate = await this.verifyOfficePassword(request, "login");
+    if (!gate.ok) return gate.response;
+    this.clearFailures("login", gate.ip);
+    if (gate.legacy) await this.upgradePassword(gate.password);
+    const sql = this.officeSql();
+    const ip = gate.ip;
+    sweepGuests(sql, (id) => this.ctx.getWebSockets(id).length > 0);
+    if (this.failureLimited("guest", ip) || guestCount(sql) >= GUEST_MAX) {
+      return json({ error: "訪客太多了，請稍後再試" }, 429);
+    }
+    this.noteFailure("guest", ip);
+    const taken = new Set(this.sql.exec<{ display_name: string }>(`SELECT display_name FROM members`).toArray().map((row) => row.display_name));
+    const id = this.freshId(GUEST_PREFIX);
+    const animal = guestAnimal();
+    const now = Date.now();
+    this.addMember(id, guestName(taken), animal, presetLook(animal));
+    this.sql.exec(`INSERT INTO guests (member_id, created_at, last_seen) VALUES (?, ?, ?)`, id, now, now);
+    // Guests get a throwaway device key so they never touch a member's device.
+    const token = await this.issueSession(id, randomToken(24));
+    const member = this.memberById(id);
+    if (!member) return json({ error: "登入失敗" }, 500);
+    return json({ profile: this.profile(member), catalog: catalog() }, 200, { "set-cookie": sessionCookie(token) });
+  }
+
   private bindDevice(memberId: string, deviceKey: string, now: number) {
     this.sql.exec(
       `INSERT INTO member_devices (id, device_key, member_id, created_at, last_seen) VALUES (?, ?, ?, ?, ?)`,
@@ -605,6 +759,7 @@ export class OfficeRoom implements DurableObject {
       this.broadcast({ t: "notice", text: `${member.display_name} 下班了` });
       this.dropSessions(member.id);
       for (const ws of this.ctx.getWebSockets(member.id)) this.goodbye(ws, "logout");
+      if (isGuest(this.officeSql(), member.id)) dropGuest(this.officeSql(), member.id);
     }
     return json({ ok: true }, 200, { "set-cookie": clearSessionCookie() });
   }
@@ -653,6 +808,7 @@ export class OfficeRoom implements DurableObject {
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
       return json({ error: "需要 WebSocket" }, 426);
     }
+    sweepGuests(this.officeSql(), (id) => this.ctx.getWebSockets(id).length > 0);
     const token = readCookie(request, SESSION_COOKIE);
     const session = token ? await sessionHash(token) : "";
     const member = this.memberBySession(session);
@@ -701,6 +857,7 @@ export class OfficeRoom implements DurableObject {
       lastPersist: Date.now(),
       deviceKey: member.bound_device,
       session,
+      guest: isGuest(this.officeSql(), member.id),
     };
     server.serializeAttachment(att);
     const others = [];
@@ -2139,6 +2296,7 @@ export class OfficeRoom implements DurableObject {
       elsewhere: 4004,
       logout: 4005,
       device: 4006,
+      upgraded: 4008,
     }[reason];
     try {
       ws.send(JSON.stringify({ t: "bye", reason }));
