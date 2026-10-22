@@ -86,3 +86,9 @@
 - 登入後的動作（改名、換角色、排行榜、送分數）盡量走已建立的 WebSocket，不另開 HTTP 請求。
 - 同一 ID 可同時在多台裝置登入。
 - 「下班」會登出該 ID 的所有裝置。
+
+## Cursor Cloud specific instructions
+
+- Node.js 22。`npm ci` 之後再跑 `npx playwright install --with-deps chromium`，端對端測試才找得到瀏覽器。
+- 本機伺服器是 `npm run dev`。沒有 `.dev.vars` 就從 `.dev.vars.example` 複製。預設埠 8787。
+- `npm run test:e2e:ci` 會自己再起一台伺服器，同樣用 8787。開發伺服器已在聽這個埠時，先停掉，或改設 `E2E_PORT`。
