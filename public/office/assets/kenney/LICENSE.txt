@@ -5,12 +5,21 @@ License: CC0 1.0 Universal (Public Domain)
 https://creativecommons.org/publicdomain/zero/1.0/
 
 These GLB files are models from Kenney's Furniture Kit (official download
-at kenney.nl/assets/furniture-kit). The bathroom pieces (toilet, doorway,
-wall, bathroomSink) keep the original material names so the office can
-recolor them. bathroomSink.glb is the official GLB.
-The toy rack in the game room is bookcaseOpenLow.glb, the pinch toy is
-bear.glb, and the pillow toy reuses pillow.glb, all from the same kit.
-The rest of the kit is not included.
+at kenney.nl/assets/furniture-kit):
+desk.glb, chairDesk.glb, chairRounded.glb, loungeSofa.glb, table.glb,
+tableCoffee.glb, bookcaseOpen.glb, bookcaseOpenLow.glb, books.glb,
+pottedPlant.glb, plantSmall1.glb, lampSquareFloor.glb, televisionModern.glb,
+cabinetTelevision.glb, rugRounded.glb, kitchenCabinet.glb,
+kitchenCoffeeMachine.glb, trashcan.glb, speaker.glb, computerScreen.glb,
+computerKeyboard.glb, computerMouse.glb, laptop.glb, pillow.glb, bear.glb,
+doorway.glb, wall.glb.
+The pantry adds kitchenSink.glb, kitchenCabinetUpper.glb, kitchenFridge.glb,
+kitchenMicrowave.glb, tableRound.glb, stoolBar.glb and rugRectangle.glb from
+the same kit, resaved with smaller vertex data. Material names are unchanged
+so the office can recolor them. The stall partitions are wall.glb and the
+stall doors are doorway.glb. The toy rack in the game room and the pantry
+snack shelf are bookcaseOpenLow.glb, the pinch toy is bear.glb, and the
+pillow toy reuses pillow.glb. The rest of the kit is not included.
 Attribution is not required; credit is still appreciated.
 
 Mini Arcade
@@ -29,10 +38,11 @@ by Kenney (www.kenney.nl)
 License: CC0 1.0 Universal (Public Domain)
 https://creativecommons.org/publicdomain/zero/1.0/
 
-plate.glb, cookie.glb, cupcake.glb, cup-tea.glb, and donut.glb are from
-Kenney's Food Kit (kenney.nl/assets/food-kit). Each file embeds the pack
-colormap. This pack has no teapot and no cake stand, so those pieces are
-not included.
+plate.glb, cookie.glb, cupcake.glb, cup-tea.glb, donut.glb, chocolate.glb
+and soda-can.glb are from Kenney's Food Kit (kenney.nl/assets/food-kit).
+Each file embeds the pack colormap (chocolate.glb and soda-can.glb embed a
+64x64 copy of it). This pack has no teapot and no cake stand, so those
+pieces are not included.
 
 Survival Kit
 by Kenney (www.kenney.nl)
@@ -62,3 +72,43 @@ vehicle-racer.glb is from Kenney's Toy Car Kit (kenney.nl/assets/toy-car-kit)
 and is used as the bumper car toy. The pack colormap is embedded in the file.
 
 Support Kenney: https://kenney.nl/donate
+
+Tiny Treats - Bubbly Bathroom (free version 1.1)
+by Isa Lousberg (www.isalousberg.com)
+
+License: CC0 1.0 Universal (Public Domain)
+https://creativecommons.org/publicdomain/zero/1.0/
+Source: https://tinytreats.itch.io/bubbly-bathroom
+
+bath-toilet.glb (toilet), bath-sink.glb (cabinet_bathroom), bath-mirror.glb
+(mirror), bath-mat.glb (mat), bath-roll.glb (toilet_roll_holder) and
+bath-plant.glb (plant) are single models from this pack. Each one embeds a
+64x64 copy of the pack texture, recolored to the office pastels, and the
+meshes are simplified to keep the files small. The free pack has no urinal.
+
+Tiny Treats - Charming Kitchen (free version 1.1)
+by Isa Lousberg (www.isalousberg.com)
+
+License: CC0 1.0 Universal (Public Domain)
+https://creativecommons.org/publicdomain/zero/1.0/
+Source: https://tinytreats.itch.io/charming-kitchen
+
+kitchen-kettle.glb (kettle), kitchen-mug.glb (mug_red),
+kitchen-dishrack.glb (dishrack_plates) and kitchen-toaster.glb (toaster) are
+single models from this pack, recolored and simplified the same way.
+
+One More Rep: Gym & Fitness Props (free base pack)
+by The Side Quest Shop
+
+License: CC0 1.0 Universal (Public Domain)
+https://creativecommons.org/publicdomain/zero/1.0/
+Source: https://thesidequestshop.itch.io/one-more-rep-gym-fitness-props
+
+The pack ships as one pack.glb. It is split into single files:
+gym-treadmill.glb (treadmill), gym-bike.glb (spin_bike), gym-dumbbells.glb
+(dumbbell_rack), gym-kettlebells.glb (kb_small, kb_medium and kb_large side
+by side), gym-bench.glb (flat_bench), gym-mats.glb (yoga_mats),
+gym-ball.glb (stability_ball) and gym-cooler.glb (water_cooler). Each embeds
+a 64x64 copy of the pack atlas recolored to the office pastels. Normals are
+left out because the pack is flat shaded; the office rebuilds them on load.
+gym-cooler.glb is also the pantry water cooler.

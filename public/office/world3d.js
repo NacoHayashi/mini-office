@@ -488,6 +488,7 @@ export function createWorld({ view, preview, labels, fallback }) {
       men: 0xe5e6e8,
       women: 0xeae6e6,
       pantry: 0xe7e4e2,
+      gym: 0xe6e8ec,
       sofa: 0xebe8e6,
       meeting: 0xe8e5e3,
       game: 0xe9e6e4,
@@ -658,6 +659,7 @@ export function createWorld({ view, preview, labels, fallback }) {
       men: { x: zone.x + zone.w - 1.8, y: zone.y + 1.35 },
       women: { x: zone.x + zone.w - 1.8, y: zone.y + 1.35 },
       pantry: { x: zone.x + 1.5, y: zone.y + 1.35 },
+      gym: { x: zone.x + zone.w - 1.6, y: zone.y + 1.35 },
       sofa: { x: zone.x + zone.w - 1.7, y: zone.y + 1.45 },
     };
     return nearDoor[zone.id] || { x: zone.x + 1.6, y: zone.y + zone.h - 1.3 };
@@ -751,7 +753,7 @@ export function createWorld({ view, preview, labels, fallback }) {
 
   function placeStall(prop, group) {
     if (typeof stallHook !== "function") return false;
-    if (prop.kind !== "stallwall" && prop.kind !== "stalldoor" && prop.kind !== "toilet" && prop.kind !== "urinal") return false;
+    if (prop.kind !== "stallwall" && prop.kind !== "stalldoor" && prop.kind !== "toilet") return false;
     const take = (name, boxW, boxH, opts) => (library.settled ? library.take(name, boxW, boxH, opts) : null);
     return stallHook(prop, group, { take }) === true;
   }
@@ -789,11 +791,12 @@ export function createWorld({ view, preview, labels, fallback }) {
       if (!model) return false;
       group.add(model);
       const top = model.userData.fit.size.y * model.userData.fit.sy;
-      addMesh(group, roundedBox(w * 0.62, 13, 1.6, 1), mat(0xd9c8f5, { clay: true, roughness: 0.9 }), 0, top + 6, -h * 0.2);
+      // Back edge of the top: the monitor stands in front of the divider, not through it.
+      addMesh(group, roundedBox(w * 0.62, 13, 1.6, 1), mat(0xd9c8f5, { clay: true, roughness: 0.9 }), 0, top + 6, -h * 0.42);
       contactShadow(group, w * 0.36, h * 0.36);
       return true;
     }
-    if (prop.kind === "counter" || prop.kind === "pantry") {
+    if (prop.kind === "counter") {
       const count = Math.max(1, Math.round(w / 34));
       const slot = w / count;
       let placed = 0;
@@ -837,17 +840,32 @@ export function createWorld({ view, preview, labels, fallback }) {
       return true;
     }
     if (prop.kind === "mirror") {
-      const model = library.take("bathroomMirror", w * 1.05, 12, { maxHeight: 26, stretch: 2.4 });
+      const model = library.take("bath-mirror", w * 0.6, 4, { maxHeight: 15, stretch: 1.2 });
       if (!model) return false;
-      model.position.y = 33;
+      model.position.y = 26;
+      model.position.z = -h / 2 + 2;
       group.add(model);
       return true;
     }
     if (prop.kind === "sink") {
-      const model = library.take("bathroomSink", w, h, { maxHeight: 32, stretch: 1.9 });
+      const model = library.take("bath-sink", w, h, { maxHeight: 34, stretch: 1.2 });
       if (!model) return false;
       group.add(model);
       contactShadow(group, w * 0.42, h * 0.42);
+      return true;
+    }
+    if (prop.kind === "decor") {
+      // Quarter turns swap the footprint, so fit the model to the unturned box.
+      const turned = ((prop.rot || 0) / 90) % 2 === 1;
+      const model = library.take(prop.model, turned ? h : w, turned ? w : h, {
+        maxHeight: prop.tall || 32,
+        stretch: 1.25,
+        lift: prop.lift || 0,
+        yaw: THREE.MathUtils.degToRad(prop.rot || 0),
+      });
+      if (!model) return false;
+      group.add(model);
+      if (prop.solid) contactShadow(group, w * 0.42, h * 0.42);
       return true;
     }
     return false;
@@ -859,7 +877,7 @@ export function createWorld({ view, preview, labels, fallback }) {
     const cz = prop.y + prop.h / 2;
     let occlude = true;
     const dressed = kenneyProp(prop, group) || placeStall(prop, group);
-    if (dressed && (prop.kind === "rug" || prop.kind === "mirror" || prop.kind === "tv")) occlude = false;
+    if (dressed && (prop.kind === "rug" || prop.kind === "mirror" || prop.kind === "tv" || (prop.kind === "decor" && !prop.solid))) occlude = false;
     if (dressed) {
       /* Kenney mesh already fills the footprint. */
     } else if (prop.kind === "desk") {
@@ -943,10 +961,9 @@ export function createWorld({ view, preview, labels, fallback }) {
       sign.position.set(0, 34, 0);
       group.add(sign);
       occlude = false;
-    } else if (prop.kind === "pantry") {
-      contactShadow(group, prop.w * 0.46, prop.h * 0.6);
-      addMesh(group, roundedBox(prop.w, 28, prop.h + 6, 4), mat(0xf6d7a4), 0, 16, 0, { cast: true });
-      addMesh(group, roundedBox(prop.w - 10, 10, 3, 2), mat(0xfff8ee), 0, 34, prop.h * 0.2);
+    } else if (prop.kind === "decor") {
+      // A missing model leaves an empty spot rather than a stand-in block.
+      occlude = false;
     } else {
       addMesh(group, roundedBox(prop.w, 16, prop.h, 4), mat(0xe6d4c8), 0, 8, 0, { cast: true });
     }
@@ -1035,7 +1052,7 @@ export function createWorld({ view, preview, labels, fallback }) {
       return true;
     }
     if (kind === "water") {
-      const model = place("kitchenFridgeSmall", 24, 28, { maxHeight: 48, stretch: 1.1 });
+      const model = place("gym-cooler", 22, 22, { maxHeight: 50, stretch: 1.2 });
       if (!model) return false;
       group.add(model);
       contactShadow(group, 12, 14);
