@@ -3,6 +3,7 @@ import { attachSnacks } from "./snacks.js";
 import { attachStalls } from "./stalls.js";
 import { attachToys } from "./toys.js";
 import { createRequests } from "./requests.js";
+import { attachLoginOptions } from "./login-options.js";
 
 const SESSION = "office_session";
 const DEVICE = "office_device";
@@ -740,6 +741,11 @@ function connect() {
       showGate("這台裝置已移除。請用代碼再加入。");
       return;
     }
+    // Another tab switched this guest to Telegram; wait for the new cookie.
+    if (event.code === 4008) {
+      setTimeout(() => { void recover(); }, 1500);
+      return;
+    }
     void recover();
   };
   const nativeClose = socket.close.bind(socket);
@@ -786,6 +792,7 @@ function onNet(message) {
       animal: message.you.animal,
       look: message.you.look,
     };
+    loginOptions.paint();
     state.sentX = state.me.x;
     state.sentY = state.me.y;
     state.sentFace = null;
@@ -1042,6 +1049,7 @@ function onNet(message) {
     setHint(text);
     setTimeout(() => { if (state.hint === text) setHint(""); }, 3200);
   } else if (message.t === "bye") {
+    if (message.reason === "upgraded") return;
     if (message.reason === "elsewhere") {
       showElsewhere();
       return;
@@ -2231,6 +2239,20 @@ $("form-pair").addEventListener("submit", async (event) => {
   state.password = "";
   applySession(result);
 });
+const loginOptions = attachLoginOptions({
+  api,
+  deviceKey,
+  start: () => { loginStarted = true; $("gate-error").textContent = ""; },
+  fail: (text) => { $("gate-error").textContent = text; },
+  done: (result) => { state.password = ""; applySession(result); },
+  isGuest: () => Boolean(state.profile?.id?.startsWith("guest-")),
+  // The guest socket is closed by the office; reconnect as the member.
+  upgraded: (result) => {
+    state.profile = result.profile;
+    state.catalog = result.catalog;
+    connect();
+  },
+});
 $("btn-later").addEventListener("click", () => { $("dialogue").hidden = true; });
 $("btn-edit").addEventListener("click", () => {
   sendMove(true);
@@ -2838,6 +2860,7 @@ function closeSheets() {
   $("clockout").hidden = true;
   $("dialogue").hidden = true;
   $("pair-dialog").hidden = true;
+  $("tg-upgrade").hidden = true;
   if (state.arcade) closeArcade();
   if (state.boardOpen) closeBoard();
 }

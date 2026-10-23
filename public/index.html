@@ -41,6 +41,7 @@
       <button id="clock-drawer" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H6v16h4M13 8l4 4-4 4M9 12h8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>下班</button>
       <button id="help-drawer" type="button">操作</button>
       <button id="pair-open" type="button">加入新裝置</button>
+      <button id="tg-upgrade-open" type="button" hidden>改用 Telegram 登入</button>
       <button id="rename" type="button">改名稱</button>
       <form id="rename-form" hidden>
         <input id="rename-input" maxlength="16" aria-label="新的顯示名稱" />
@@ -106,6 +107,18 @@
       </div>
     </div>
   </section>
+  <section id="tg-upgrade" hidden>
+    <div class="card" role="dialog" aria-labelledby="tg-upgrade-title">
+      <h2 id="tg-upgrade-title">改用 Telegram 登入</h2>
+      <p class="muted">名稱、造型、位置和小遊戲分數都會帶過去。這個 Telegram 已經有帳號的話，會沿用那個帳號，只把分數併進去。</p>
+      <input id="tg-upgrade-password" type="password" autocomplete="current-password" aria-label="密碼" placeholder="辦公室密碼" />
+      <div id="tg-upgrade-widget"></div>
+      <p id="tg-upgrade-error" class="error" aria-live="polite"></p>
+      <div class="row">
+        <button type="button" id="tg-upgrade-close">取消</button>
+      </div>
+    </div>
+  </section>
   <section id="elsewhere" hidden>
     <div class="card" role="dialog" aria-labelledby="elsewhere-title">
       <h2 id="elsewhere-title">已在其他裝置上線</h2>
@@ -163,6 +176,12 @@
       <form id="form-password">
         <label>辦公室密碼<input id="office-password" type="password" autocomplete="current-password" /></label>
         <button type="submit">進入</button>
+        <div id="login-options">
+          <span class="login-or">或</span>
+          <div id="tg-login" hidden></div>
+          <button type="button" id="guest-login" class="ghost">以訪客身分逛逛</button>
+          <p class="login-hint">訪客和第一次用 Telegram 登入，也要先輸入上面的辦公室密碼。</p>
+        </div>
       </form>
       <form id="form-register" hidden>
         <label>你的 ID<input id="office-id" maxlength="16" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="例如 naco" /></label>

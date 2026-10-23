@@ -54,6 +54,24 @@ await esbuild.build({
   outfile: lalaFile,
 });
 const { lalaHeading } = await import(pathToFileURL(lalaFile).href);
+const telegramFile = join(outdir, "telegram-login.mjs");
+await esbuild.build({
+  entryPoints: [join(import.meta.dirname, "../src/telegram-login.ts")],
+  bundle: true,
+  format: "esm",
+  platform: "neutral",
+  outfile: telegramFile,
+});
+const telegram = await import(pathToFileURL(telegramFile).href);
+const guestFile = join(outdir, "guest-login.mjs");
+await esbuild.build({
+  entryPoints: [join(import.meta.dirname, "../src/guest-login.ts")],
+  bundle: true,
+  format: "esm",
+  platform: "neutral",
+  outfile: guestFile,
+});
+const guests = await import(pathToFileURL(guestFile).href);
 
 function officeDb() {
   const db = new DatabaseSync(":memory:");
@@ -489,7 +507,7 @@ test("old office data upgrades in order without moving furniture people already 
   assert.equal(Number(lamp.x), 30);
   const user = sql.exec(`SELECT x FROM furniture WHERE id = 'item-user'`).toArray()[0];
   assert.equal(Number(user.x), 12);
-  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "9");
+  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "10");
   assert.equal(sql.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'score_hits'`).toArray().length, 1);
   assert.equal(sql.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'admin_sessions'`).toArray().length, 1);
   await migrations.runMigrations(sql, [...defaults, { id: "bin-new", kind: "bin", x: 70, y: 80, rot: 0 }], async (token) => token);
@@ -557,7 +575,7 @@ test("score hit storage is added by the next migration and omitted from backups"
   assert.equal(sql.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'score_hits'`).toArray().length, 0);
   sql.exec(`INSERT INTO meta (key, value) VALUES ('schema_version', '4')`);
   await migrations.runMigrations(sql, [], async (token) => token);
-  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "9");
+  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "10");
   assert.equal(sql.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'score_hits'`).toArray().length, 1);
   sql.exec(`INSERT INTO score_hits (member_id, game, at) VALUES ('momo', 'zip', 1)`);
   const backup = migrations.exportOffice(sql);
@@ -573,7 +591,7 @@ test("admin sessions are added by the following migration, swept when expired, a
   assert.equal(sql.exec(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'admin_sessions'`).toArray().length, 0);
   sql.exec(`INSERT INTO meta (key, value) VALUES ('schema_version', '5')`);
   await migrations.runMigrations(sql, [], async (token) => token);
-  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "9");
+  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "10");
   sql.exec(`INSERT INTO admin_sessions (token_hash, created_at, expires_at) VALUES ('old', 1, 50)`);
   sql.exec(`INSERT INTO admin_sessions (token_hash, created_at, expires_at) VALUES ('fresh', 1, 5000)`);
   sql.exec(`DELETE FROM admin_sessions WHERE expires_at <= ?`, 100);
@@ -1353,7 +1371,7 @@ test("only the old right sofa turns to face the coffee table", async () => {
   sql.exec(`INSERT INTO furniture (id, kind, x, y, rot) VALUES ('sofa-left', 'sofa', 992, 840, 90)`);
   sql.exec(`INSERT INTO furniture (id, kind, x, y, rot) VALUES ('sofa-moved', 'sofa', 1100, 840, 90)`);
   await migrations.runMigrations(sql, [], async (token) => token);
-  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "9");
+  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "10");
   assert.equal(Number(sql.exec(`SELECT rot FROM furniture WHERE id = 'sofa-right'`).toArray()[0].rot), 270);
   assert.equal(Number(sql.exec(`SELECT rot FROM furniture WHERE id = 'sofa-left'`).toArray()[0].rot), 90);
   assert.equal(Number(sql.exec(`SELECT rot FROM furniture WHERE id = 'sofa-moved'`).toArray()[0].rot), 90);
@@ -1574,7 +1592,7 @@ test("the pantry coffee machine and water cooler move off the new counter only i
   sql.exec(`INSERT INTO furniture (id, kind, x, y, rot) VALUES ('coffee-1', 'coffee', 712, 932, 0)`);
   sql.exec(`INSERT INTO furniture (id, kind, x, y, rot) VALUES ('water-1', 'water', 300, 400, 0)`);
   await migrations.runMigrations(sql, [], async (token) => token);
-  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "9");
+  assert.equal(sql.exec(`SELECT value FROM meta WHERE key = 'schema_version'`).toArray()[0].value, "10");
   const coffee = sql.exec(`SELECT x, y FROM furniture WHERE id = 'coffee-1'`).toArray()[0];
   const water = sql.exec(`SELECT x, y FROM furniture WHERE id = 'water-1'`).toArray()[0];
   const office = content.buildOffice();
@@ -1753,4 +1771,235 @@ test("the version label uses the deploy commit, then git, then just the version"
   assert.equal(versionLabel("0.5.0", {}, () => ""), "v0.5.0");
   assert.equal(versionLabel("0.5.0", { WORKERS_CI_COMMIT_SHA: "not a sha" }, () => ""), "v0.5.0");
   assert.equal(versionLabel(undefined, {}, () => ""), "dev");
+});
+
+async function signTelegram(fields, token) {
+  const { createHash, createHmac } = await import("node:crypto");
+  const check = Object.keys(fields).sort().map((key) => `${key}=${fields[key]}`).join("\n");
+  const secret = createHash("sha256").update(token).digest();
+  return { ...fields, hash: createHmac("sha256", secret).update(check).digest("hex") };
+}
+
+test("Telegram 登入只接受簽章正確且沒過期的資料", async () => {
+  const token = "123456:test-bot-token";
+  const now = 1_800_000_000_000;
+  const fields = { id: 424242, first_name: "小八", last_name: "貓", username: "hachi", auth_date: Math.floor(now / 1000) - 60 };
+  const valid = await signTelegram(fields, token);
+  assert.deepEqual(await telegram.checkTelegramAuth(valid, token, now), { telegramId: "424242", name: "小八 貓" });
+  assert.equal(await telegram.checkTelegramAuth({ ...valid, id: 424243 }, token, now), null);
+  assert.equal(await telegram.checkTelegramAuth({ ...valid, hash: valid.hash.replace(/^./, (c) => (c === "a" ? "b" : "a")) }, token, now), null);
+  assert.equal(await telegram.checkTelegramAuth(valid, "999:other-token", now), null);
+  assert.equal(await telegram.checkTelegramAuth({ ...valid, extra: { x: 1 } }, token, now), null);
+  const stale = await signTelegram({ ...fields, auth_date: Math.floor(now / 1000) - 2 * 24 * 60 * 60 }, token);
+  assert.equal(await telegram.checkTelegramAuth(stale, token, now), null);
+  const future = await signTelegram({ ...fields, auth_date: Math.floor(now / 1000) + 3600 }, token);
+  assert.equal(await telegram.checkTelegramAuth(future, token, now), null);
+  assert.equal(await telegram.checkTelegramAuth(valid, "", now), null);
+  assert.equal(telegram.telegramBot({}), null);
+  assert.equal(telegram.telegramBot({ TELEGRAM_BOT_TOKEN: token }), null);
+  assert.deepEqual(telegram.telegramBot({ TELEGRAM_BOT_TOKEN: token, TELEGRAM_BOT_USERNAME: "@office_bot" }), { token, username: "office_bot" });
+});
+
+test("訪客不能調整設備、改名，也拿不到成員或 Telegram 的 ID", () => {
+  assert.equal(guests.guestBlocks("edit", { on: true }, "訪客123"), "訪客不能調整設備");
+  assert.equal(guests.guestBlocks("edit", { on: false }, "訪客123"), null);
+  assert.equal(guests.guestBlocks("furn", { op: "move" }, "訪客123"), "訪客不能調整設備");
+  assert.equal(guests.guestBlocks("profile", { displayName: "naco" }, "訪客123"), "訪客不能改名稱");
+  assert.equal(guests.guestBlocks("profile", { displayName: "訪客123", animal: "cat" }, "訪客123"), null);
+  assert.equal(guests.guestBlocks("move", { x: 1, y: 2 }, "訪客123"), null);
+  assert.equal(guests.guestBlocks("chat", { text: "hi" }, "訪客123"), null);
+  assert.equal(guests.reservedLoginId("guest-abcd"), true);
+  assert.equal(guests.reservedLoginId("tg-1234"), true);
+  assert.equal(guests.reservedLoginId("naco"), false);
+  let i = 0;
+  const steps = [0, 0, 0.5];
+  const name = guests.guestName(new Set(["訪客100"]), () => steps[i++]);
+  assert.equal(name, "訪客550");
+});
+
+test("閒置的訪客會被清掉，在線的訪客和成員不會", async () => {
+  const { sql } = officeDb();
+  await migrations.runMigrations(sql, [], async (token) => token);
+  const now = 10_000_000;
+  for (const id of ["guest-old", "guest-live", "guest-new", "naco"]) {
+    sql.exec(
+      `INSERT INTO members (id, display_name, animal, accessories, pos_x, pos_y, pos_dir, created_at) VALUES (?, ?, 'cat', '{}', 0, 0, 1, 0)`,
+      id,
+      id,
+    );
+    sql.exec(`INSERT INTO member_sessions (token_hash, member_id, device_key, epoch, created_at) VALUES (?, ?, ?, 1, 0)`, `h-${id}`, id, `d-${id}`);
+  }
+  for (const [id, seen] of [["guest-old", 0], ["guest-live", 0], ["guest-new", now - 1000]]) {
+    sql.exec(`INSERT INTO guests (member_id, created_at, last_seen) VALUES (?, ?, ?)`, id, seen, seen);
+  }
+  assert.equal(guests.guestCount(sql), 3);
+  assert.equal(guests.isGuest(sql, "naco"), false);
+  assert.deepEqual(guests.sweepGuests(sql, (id) => id === "guest-live", now), ["guest-old"]);
+  const left = sql.exec(`SELECT id FROM members ORDER BY id`).toArray().map((row) => row.id);
+  assert.deepEqual(left, ["guest-live", "guest-new", "naco"]);
+  assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM member_sessions WHERE member_id = 'guest-old'`).toArray()[0].n, 0);
+  assert.equal(guests.guestCount(sql), 2);
+});
+
+// Runs the real office room on an in-memory database to check who needs the office password.
+async function memoryRoom() {
+  const roomFile = join(outdir, "office-room.mjs");
+  await esbuild.build({
+    entryPoints: [join(import.meta.dirname, "../src/office-room.ts")],
+    bundle: true,
+    format: "esm",
+    platform: "neutral",
+    outfile: roomFile,
+  });
+  globalThis.WebSocketRequestResponsePair ??= class {};
+  const { OfficeRoom } = await import(pathToFileURL(roomFile).href);
+  const { db, sql } = officeDb();
+  let boot;
+  const ctx = {
+    storage: { sql, transactionSync: (run) => sql.transaction(run) },
+    setWebSocketAutoResponse() {},
+    blockConcurrencyWhile(run) {
+      boot = run();
+    },
+    getWebSockets: () => [],
+  };
+  const room = new OfficeRoom(ctx, {});
+  await boot;
+  const call = async (path, body, headers = {}) => {
+    const response = await room.fetch(
+      new Request(`https://office.test${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-office-ip": "10.0.0.1", ...headers },
+        body: JSON.stringify(body),
+      }),
+    );
+    const cookie = response.headers.get("set-cookie")?.split(";")[0] ?? "";
+    return { status: response.status, cookie, ...(await response.json()) };
+  };
+  const me = async (cookie) => (await room.fetch(new Request("https://office.test/api/office/me", { headers: { cookie } }))).status;
+  assert.equal((await call("/api/office/admin/password", { password: "office-pass" }, { "x-office-admin": "1" })).status, 200);
+  return { db, sql, call, me };
+}
+
+test("訪客和第一次用 Telegram 登入都要辦公室密碼，已連結的 Telegram 不用", async () => {
+  const { db, sql, call } = await memoryRoom();
+  const failures = () => Number(sql.exec(`SELECT COUNT(*) AS n FROM auth_failures WHERE kind = 'login'`).one().n);
+  assert.equal((await call("/api/office/guest", {})).status, 401);
+  assert.equal((await call("/api/office/guest", { password: "wrong-pass" })).status, 401);
+  assert.equal(guests.guestCount(sql), 0);
+  assert.equal(failures(), 2);
+  const guest = await call("/api/office/guest", { password: "office-pass" });
+  assert.equal(guest.status, 200);
+  assert.ok(guest.profile.id.startsWith("guest-"));
+  assert.equal(failures(), 0);
+
+  const marker = { [telegram.TELEGRAM_MARKER]: "1" };
+  const tg = { telegramId: "424242", name: "小八", deviceKey: "cd".repeat(20) };
+  assert.equal((await call("/api/office/telegram/enter", { ...tg, password: "office-pass" })).status, 401, "沒有 Worker 標記不能進");
+  const ask = await call("/api/office/telegram/enter", tg, marker);
+  assert.equal(ask.status, 401);
+  assert.equal(ask.needsPassword, true);
+  assert.equal((await call("/api/office/telegram/enter", { ...tg, password: "wrong-pass" }, marker)).status, 401);
+  assert.equal(failures(), 1);
+  assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM telegram_members`).one().n, 0);
+  const first = await call("/api/office/telegram/enter", { ...tg, password: "office-pass" }, marker);
+  assert.equal(first.status, 200);
+  assert.ok(first.profile.id.startsWith("tg-"));
+  const again = await call("/api/office/telegram/enter", { ...tg, deviceKey: "ef".repeat(20) }, marker);
+  assert.equal(again.status, 200);
+  assert.equal(again.profile.id, first.profile.id);
+
+  // Wrong guesses on any of these paths share the password login limit.
+  for (let i = 0; i < pairing.AUTH_LIMIT; i++) await call("/api/office/guest", { password: "wrong-pass" });
+  assert.equal((await call("/api/office/guest", { password: "office-pass" })).status, 429);
+  assert.equal((await call("/api/office/login", { password: "office-pass" })).status, 429);
+  assert.equal((await call("/api/office/telegram/enter", { ...tg, telegramId: "555", password: "office-pass" }, marker)).status, 429);
+  db.close();
+});
+
+test("訪客清掉時分數一起清；備份還原保留訪客與 Telegram 對應", async () => {
+  const { sql } = officeDb();
+  await migrations.runMigrations(sql, [], async (token) => token);
+  for (const id of ["guest-aa", "tg-bb"]) {
+    sql.exec(`INSERT INTO members (id, display_name, animal, accessories, pos_x, pos_y, pos_dir, created_at) VALUES (?, ?, 'cat', '{}', 0, 0, 1, 0)`, id, id);
+    sql.exec(`INSERT INTO scores (member_id, game, score, updated_at) VALUES (?, 'zip', 5, 1)`, id);
+  }
+  sql.exec(`INSERT INTO guests (member_id, created_at, last_seen) VALUES ('guest-aa', 1, 2)`);
+  sql.exec(`INSERT INTO telegram_members (telegram_id, member_id, created_at) VALUES ('424242', 'tg-bb', 3)`);
+  const backup = JSON.parse(JSON.stringify(migrations.exportOffice(sql)));
+  assert.deepEqual(backup.guests, [{ member_id: "guest-aa", created_at: 1, last_seen: 2 }]);
+  assert.deepEqual(backup.telegram, [{ telegram_id: "424242", member_id: "tg-bb", created_at: 3 }]);
+  assert.deepEqual(guests.sweepGuests(sql, () => false, 10_000_000), ["guest-aa"]);
+  assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM scores WHERE member_id = 'guest-aa'`).one().n, 0);
+  assert.equal(migrations.restoreOffice(sql, backup).ok, true);
+  assert.equal(guests.isGuest(sql, "guest-aa"), true);
+  assert.equal(sql.exec(`SELECT member_id FROM telegram_members WHERE telegram_id = '424242'`).one().member_id, "tg-bb");
+  const { guests: _g, telegram: _t, ...older } = backup;
+  assert.equal(migrations.restoreOffice(sql, older).ok, true, "舊備份沒有這兩份清單也能還原");
+  assert.equal(guests.guestCount(sql), 0);
+  assert.equal(migrations.restoreOffice(sql, { ...backup, telegram: [{ telegram_id: "1", member_id: "nobody" }] }).ok, false);
+  assert.equal(migrations.restoreOffice(sql, { ...backup, guests: [{ member_id: "nobody" }] }).ok, false);
+});
+
+test("訪客改用新的 Telegram 帳號時，原地變成成員並保留名稱、造型、位置和分數", async () => {
+  const { db, sql, call, me } = await memoryRoom();
+  const marker = { [telegram.TELEGRAM_MARKER]: "1" };
+  const guest = await call("/api/office/guest", { password: "office-pass" });
+  const gid = guest.profile.id;
+  sql.exec(`UPDATE members SET pos_x = 321, pos_y = 654 WHERE id = ?`, gid);
+  sql.exec(`INSERT INTO scores (member_id, game, score, updated_at) VALUES (?, 'zip', 7, 1)`, gid);
+  const up = { telegramId: "777", name: "小八", deviceKey: "ab".repeat(20) };
+  const asGuest = { ...marker, cookie: guest.cookie };
+  assert.equal((await call("/api/office/telegram/upgrade", { ...up, password: "office-pass" }, { cookie: guest.cookie })).status, 401, "沒有 Worker 標記不能升級");
+  const ask = await call("/api/office/telegram/upgrade", up, asGuest);
+  assert.equal(ask.needsPassword, true);
+  assert.equal((await call("/api/office/telegram/upgrade", { ...up, password: "wrong-pass" }, asGuest)).status, 401);
+  assert.equal(Number(sql.exec(`SELECT COUNT(*) AS n FROM auth_failures WHERE kind = 'login'`).one().n), 1);
+  assert.equal(guests.guestCount(sql), 1, "密碼錯時訪客還在");
+  assert.equal((await call("/api/office/telegram/upgrade", { ...up, password: "office-pass" }, marker)).status, 401, "沒有訪客登入不能升級");
+
+  const done = await call("/api/office/telegram/upgrade", { ...up, password: "office-pass" }, asGuest);
+  assert.equal(done.status, 200);
+  assert.ok(done.profile.id.startsWith("tg-"));
+  assert.equal(done.profile.displayName, guest.profile.displayName);
+  assert.deepEqual(done.profile.look, guest.profile.look);
+  assert.equal(guests.guestCount(sql), 0, "訪客名額馬上空出來");
+  assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM members WHERE id = ?`, gid).one().n, 0);
+  assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM member_sessions WHERE member_id = ?`, gid).one().n, 0);
+  const row = sql.exec(`SELECT pos_x, pos_y FROM members WHERE id = ?`, done.profile.id).one();
+  assert.deepEqual([Number(row.pos_x), Number(row.pos_y)], [321, 654]);
+  assert.equal(sql.exec(`SELECT score FROM scores WHERE member_id = ? AND game = 'zip'`, done.profile.id).one().score, 7);
+  assert.equal(sql.exec(`SELECT member_id FROM telegram_members WHERE telegram_id = '777'`).one().member_id, done.profile.id);
+  assert.equal(await me(guest.cookie), 401, "舊的訪客登入失效");
+  assert.equal(await me(done.cookie), 200);
+  assert.equal((await call("/api/office/telegram/upgrade", { ...up, password: "office-pass" }, { ...marker, cookie: done.cookie })).status, 403, "成員不能再升級");
+  db.close();
+});
+
+test("訪客改用已有成員的 Telegram 時，沿用成員資料並把分數取最高合併", async () => {
+  const { db, sql, call, me } = await memoryRoom();
+  const marker = { [telegram.TELEGRAM_MARKER]: "1" };
+  const member = await call("/api/office/telegram/enter", { telegramId: "888", name: "吉伊", deviceKey: "cd".repeat(20), password: "office-pass" }, marker);
+  const mid = member.profile.id;
+  for (const [game, score] of [["zip", 10], ["dash", 3]]) sql.exec(`INSERT INTO scores (member_id, game, score, updated_at) VALUES (?, ?, ?, 1)`, mid, game, score);
+  const guest = await call("/api/office/guest", { password: "office-pass" });
+  const gid = guest.profile.id;
+  for (const [game, score] of [["zip", 7], ["dash", 9], ["jump", 4]]) sql.exec(`INSERT INTO scores (member_id, game, score, updated_at) VALUES (?, ?, ?, 2)`, gid, game, score);
+  const done = await call("/api/office/telegram/upgrade", { telegramId: "888", name: "別的名字", deviceKey: "ef".repeat(20), password: "office-pass" }, { ...marker, cookie: guest.cookie });
+  assert.equal(done.status, 200);
+  assert.equal(done.profile.id, mid);
+  assert.equal(done.profile.displayName, "吉伊");
+  assert.deepEqual(done.profile.look, member.profile.look);
+  const scores = sql.exec(`SELECT game, score FROM scores WHERE member_id = ? ORDER BY game`, mid).toArray().map((r) => [r.game, Number(r.score)]);
+  assert.deepEqual(scores, [["dash", 9], ["jump", 4], ["zip", 10]]);
+  for (const table of ["scores", "member_sessions", "member_devices"]) {
+    assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM ${table} WHERE member_id = ?`, gid).one().n, 0, table);
+  }
+  assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM members WHERE id = ?`, gid).one().n, 0);
+  assert.equal(guests.guestCount(sql), 0);
+  assert.equal(sql.exec(`SELECT COUNT(*) AS n FROM telegram_members`).one().n, 1);
+  assert.equal(await me(guest.cookie), 401);
+  assert.equal(await me(done.cookie), 200);
+  assert.equal(await me(member.cookie), 200, "成員原本的裝置不受影響");
+  db.close();
 });
