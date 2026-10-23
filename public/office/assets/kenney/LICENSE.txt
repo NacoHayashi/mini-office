@@ -11,15 +11,16 @@ tableCoffee.glb, bookcaseOpen.glb, bookcaseOpenLow.glb, books.glb,
 pottedPlant.glb, plantSmall1.glb, lampSquareFloor.glb, televisionModern.glb,
 cabinetTelevision.glb, rugRounded.glb, kitchenCabinet.glb,
 kitchenCoffeeMachine.glb, trashcan.glb, speaker.glb, computerScreen.glb,
-computerKeyboard.glb, computerMouse.glb, laptop.glb, pillow.glb, bear.glb,
+computerKeyboard.glb, computerMouse.glb, laptop.glb, pillow.glb,
 doorway.glb, wall.glb.
 The pantry adds kitchenSink.glb, kitchenCabinetUpper.glb, kitchenFridge.glb,
 kitchenMicrowave.glb, tableRound.glb, stoolBar.glb and rugRectangle.glb from
 the same kit, resaved with smaller vertex data. Material names are unchanged
 so the office can recolor them. The stall partitions are wall.glb and the
 stall doors are doorway.glb. The toy rack in the game room and the pantry
-snack shelf are bookcaseOpenLow.glb, the pinch toy is bear.glb, and the
-pillow toy reuses pillow.glb. The rest of the kit is not included.
+snack shelf are bookcaseOpenLow.glb, and the pillow toy reuses pillow.glb.
+The other game room toys are built in code in the same toon style.
+The rest of the kit is not included.
 Attribution is not required; credit is still appreciated.
 
 Mini Arcade
@@ -43,24 +44,6 @@ and soda-can.glb are from Kenney's Food Kit (kenney.nl/assets/food-kit).
 Each file embeds the pack colormap (chocolate.glb and soda-can.glb embed a
 64x64 copy of it). This pack has no teapot and no cake stand, so those
 pieces are not included.
-
-Survival Kit
-by Kenney (www.kenney.nl)
-
-License: CC0 1.0 Universal (Public Domain)
-https://creativecommons.org/publicdomain/zero/1.0/
-
-tool-hammer.glb is from Kenney's Survival Kit (kenney.nl/assets/survival-kit)
-and is used as the toy hammer. The pack colormap is embedded in the file.
-
-Minigolf Kit
-by Kenney (www.kenney.nl)
-
-License: CC0 1.0 Universal (Public Domain)
-https://creativecommons.org/publicdomain/zero/1.0/
-
-ball-red.glb is from Kenney's Minigolf Kit (kenney.nl/assets/minigolf-kit)
-and is used as the catch ball. The pack colormap is embedded in the file.
 
 Toy Car Kit
 by Kenney (www.kenney.nl)

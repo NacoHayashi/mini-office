@@ -30,9 +30,9 @@ import {
   type Look,
   type OfficeMap,
 } from "./content";
-import { HANDS_META, isFixedId, isFixedKind, MACHINE_ID, SnackRoom, SNACK_META, type SnackMachine } from "./snacks";
+import { HANDS_META, isFixedId, isFixedKind, LALA_REACH, MACHINE_ID, SnackRoom, SNACK_META, type SnackMachine } from "./snacks";
 import { STALL_COOLDOWN_MS, STALL_META, StallDoors } from "./stalls";
-import { knockSpot, openFloor, TOY_META, TOY_RACK_ID, ToyRoom, type Body, type ToyFail } from "./toys";
+import { BUMP_DISTANCES, isPlayToy, KNOCK_DISTANCES, knockSpot, openFloor, TOY_META, TOY_RACK_ID, ToyRoom, type Body, type ToyFail } from "./toys";
 import { adminSessionHash, adminSessionRecord, adminSessionState } from "./admin-session";
 import { passwordHash, passwordVerdict, randomToken, readMeta, sha256, writeMeta } from "./crypto";
 import { json, readCookie } from "./http";
@@ -1593,27 +1593,31 @@ export class OfficeRoom implements DurableObject {
       this.scheduleToys();
       return;
     }
+    if (op === "tidy") {
+      if (Math.hypot(att.x - this.map.lala.x, att.y - this.map.lala.y) > LALA_REACH) {
+        this.send(ws, { t: "error", message: "要先靠近 Lala 小姐才能請她收玩具" });
+        return;
+      }
+      const moved = this.toys.tidy((id) => this.ctx.getWebSockets(id).some((socket) => this.attOf(socket)));
+      if (moved.length) this.rememberToys();
+      this.broadcastToys({ kind: "tidy", by: att.id, count: moved.length });
+      return;
+    }
     const me = this.toyBody(att);
     const other = typeof body.to === "string" && body.to !== att.id ? this.attachment(body.to) : null;
     const target = other ? this.toyBody(other) : null;
     const toy = this.toys.hand(att.id);
-    if (op === "ram") {
-      const result = this.toys.ram(me, target, now, (who, nx, ny) => this.knockFor(who, nx, ny));
-      if (!result.ok || !other) return;
-      if (result.spot) {
-        const hit = this.socketOf(other.id);
-        if (hit) {
-          hit.att.x = result.spot.x;
-          hit.att.y = result.spot.y;
-          hit.att.lastMove = now;
-          hit.att.knockAt = now;
-          hit.ws.serializeAttachment(hit.att);
-          this.keepWhisper(hit.ws, hit.att);
-          this.persist(hit.att);
-        }
+    if (op === "ram" || op === "bump") {
+      const find = (who: Body, nx: number, ny: number) => this.knockFor(who, nx, ny, op === "bump");
+      const result = op === "ram" ? this.toys.ram(me, target, now, find) : this.toys.bump(me, target, now, find);
+      if (!result.ok || !other) {
+        // The bumper car fires on every touch, so only a bump by hand says why it did nothing.
+        if (op === "bump") this.toyError(ws, result.ok ? "none" : result.reason);
+        return;
       }
+      if (result.spot) this.knockTo(other.id, result.spot, now);
       this.broadcastToys({
-        kind: "ram",
+        kind: op,
         by: att.id,
         to: result.to,
         nx: result.nx,
@@ -1624,35 +1628,53 @@ export class OfficeRoom implements DurableObject {
       });
       return;
     }
-    // Pinching starts with { op: "pinch", on: true } and ends with on: false; every other toy uses "use".
-    const pinchOn = op === "pinch" && body.on === true;
-    if (op !== "use" && !pinchOn) return;
-    if (!toy) return this.toyError(ws, "empty");
-    if (pinchOn !== (toy === "pinch")) return this.toyError(ws, "wrong");
-    if (toy === "hammer" || toy === "pillow") {
-      const result = this.toys.hit(me, target, toy, now);
+    // Pinching starts with { op: "pinch", on: true } and ends with on: false. It needs no toy.
+    if (op === "pinch" && body.on === true) {
+      const result = this.toys.pinchStart(me, target, now);
       if (!result.ok) return this.toyError(ws, result.reason);
-      this.broadcastToys({ kind: toy === "hammer" ? "bonk" : "pillow", by: att.id, to: result.to });
-    } else if (toy === "ball") {
+      this.broadcastToys({ kind: "pinch", by: att.id, to: result.to, on: true, ms: result.ms });
+      this.scheduleToys();
+      return;
+    }
+    if (op !== "use") return;
+    if (!toy) return this.toyError(ws, "empty");
+    if (toy === "ball") {
       const result = this.toys.throwBall(me, target, now, (who, nx, ny) => this.ballLanding(who, nx, ny));
       if (!result.ok) return this.toyError(ws, result.reason);
       this.rememberToys();
       this.broadcastToys({ kind: "throw", by: att.id, to: result.to, ms: result.ms, x: result.drop.x, y: result.drop.y, combo: result.combo });
       this.scheduleToys();
-    } else if (toy === "plane") {
-      const text = normalizeChat(body.text);
-      const result = this.toys.plane(me, target, text, now);
-      if (!result.ok || !text || !other) return this.toyError(ws, result.ok ? "none" : result.reason);
-      this.broadcastToys({ kind: "plane", by: att.id, to: result.to });
-      const letter = { t: "toys", letter: { from: att.id, name: att.name, text, at: now } };
-      for (const socket of this.ctx.getWebSockets(other.id)) this.send(socket, letter);
-    } else if (toy === "pinch") {
-      const result = this.toys.pinchStart(me, target, now);
+    } else if (isPlayToy(toy)) {
+      const result = this.toys.play(me, target, toy, now);
       if (!result.ok) return this.toyError(ws, result.reason);
-      this.broadcastToys({ kind: "pinch", by: att.id, to: result.to, on: true, ms: result.ms });
-      this.scheduleToys();
+      const kind = toy === "hammer" ? "bonk" : toy;
+      this.broadcastToys({ kind, by: att.id, to: result.to });
     } else {
       this.toyError(ws, "wrong");
+    }
+  }
+
+  /** Moves someone to a knockback spot the server already checked is clear. */
+  private knockTo(id: string, spot: { x: number; y: number }, now: number) {
+    const hit = this.socketOf(id);
+    if (!hit) return;
+    hit.att.x = spot.x;
+    hit.att.y = spot.y;
+    hit.att.lastMove = now;
+    hit.att.knockAt = now;
+    hit.ws.serializeAttachment(hit.att);
+    this.keepWhisper(hit.ws, hit.att);
+    this.persist(hit.att);
+    // Every other socket of the same person follows too.
+    for (const socket of this.ctx.getWebSockets(id)) {
+      if (socket === hit.ws) continue;
+      const att = this.attOf(socket);
+      if (!att) continue;
+      att.x = spot.x;
+      att.y = spot.y;
+      att.lastMove = now;
+      att.knockAt = now;
+      socket.serializeAttachment(att);
     }
   }
 
@@ -1671,6 +1693,7 @@ export class OfficeRoom implements DurableObject {
       capped: "對方玩得夠多了，讓他休息一下",
       wrong: "手上的玩具不能這樣用",
       none: "旁邊沒有同事",
+      seated: "坐著的人撞不動",
       early: "球還沒到",
       late: "沒接到",
       unknown: "沒有這個玩具",
@@ -1692,7 +1715,7 @@ export class OfficeRoom implements DurableObject {
   }
 
   // Knockback lands only where the whole slide is clear of walls, furniture, the map edge and other people.
-  private knockFor(target: Body, nx: number, ny: number) {
+  private knockFor(target: Body, nx: number, ny: number, far = false) {
     const bodies: Body[] = [{ id: "lala", x: this.map.lala.x, y: this.map.lala.y, r: bodyRadiusOf({ body: "bean" }) }];
     for (const socket of this.ctx.getWebSockets()) {
       const other = this.attOf(socket);
@@ -1704,7 +1727,7 @@ export class OfficeRoom implements DurableObject {
       const center = this.chairCenter(chair);
       bodies.push({ id: chair.id, x: center.x, y: center.y, r: 18 });
     }
-    return knockSpot(target, nx, ny, this.toyFloor(bodies, target.r));
+    return knockSpot(target, nx, ny, this.toyFloor(bodies, target.r), far ? BUMP_DISTANCES : KNOCK_DISTANCES);
   }
 
   private ballLanding(target: Body, nx: number, ny: number) {

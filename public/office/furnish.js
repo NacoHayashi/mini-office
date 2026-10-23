@@ -47,9 +47,6 @@ const FILES = [
   "cup-tea",
   "donut",
   "bookcaseOpenLow",
-  "bear",
-  "tool-hammer",
-  "ball-red",
   "vehicle-racer",
   "chocolate",
   "soda-can",
@@ -79,7 +76,7 @@ const PALETTE = {
 // busy office does not double its draw calls on phones.
 const OUTLINED = new Set(["desk", "loungeSofa", "bookcaseOpen", "bookcaseOpenLow", "kitchenCabinet", "kitchenSink", "kitchenFridge", "table", "cabinetTelevision", "bath-toilet", "bath-sink", "gym-treadmill", "doorway", "wall"]);
 // Mini Arcade, Food Kit, Survival Kit, Minigolf Kit, Toy Car Kit and the itch.io packs ship a colormap instead of Furniture Kit material names.
-const TEXTURED = new Set(["vending-machine", "plate", "cookie", "cupcake", "cup-tea", "donut", "tool-hammer", "ball-red", "vehicle-racer", "chocolate", "soda-can", ...TINY_TREATS, ...ONE_MORE_REP]);
+const TEXTURED = new Set(["vending-machine", "plate", "cookie", "cupcake", "cup-tea", "donut", "vehicle-racer", "chocolate", "soda-can", ...TINY_TREATS, ...ONE_MORE_REP]);
 const ramp = stepGradient([178, 224, 255]);
 
 function recolor(root, file) {

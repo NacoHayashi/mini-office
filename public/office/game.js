@@ -2151,6 +2151,7 @@ window.addEventListener("keydown", (event) => {
   state.keys.add(event.key.toLowerCase());
   if (event.key === "e" || event.key === "E") interact();
   if ((event.key === "q" || event.key === "Q") && !event.repeat && state.me && !state.editing) toys.drop();
+  if ((event.key === "1" || event.key === "2") && !event.repeat && state.me && !state.editing && !event.ctrlKey && !event.metaKey && !event.altKey) toys.key(event.key, true);
   if (event.key === "v" || event.key === "V") {
     world.toggle();
     paintCam();
@@ -2165,7 +2166,7 @@ window.addEventListener("keydown", (event) => {
 });
 window.addEventListener("keyup", (event) => {
   state.keys.delete(event.key.toLowerCase());
-  if (event.key === "e" || event.key === "E") toys.release();
+  if (event.key === "e" || event.key === "E" || event.key === "2") toys.release();
 });
 window.addEventListener("blur", () => toys.release());
 canvas.addEventListener("pointerdown", onPointerDown);
@@ -2757,6 +2758,7 @@ if (officeDebug) window.office = {
   get toyOpen() { return toys.isOpen(); },
   toyInteract() { return toys.interact(); },
   toyMenu() { return toys.openNearest(); },
+  toyBump() { return toys.bump(); },
   feed(message) { onNet(message); },
 };
 
