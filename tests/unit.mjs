@@ -990,7 +990,8 @@ test("toys: taking only fills the hand; rack, floor, swap and snack rules", () =
   const messy = new toys.ToyRoom(JSON.stringify({ hammer: { hand: "a" }, ball: { hand: "a" }, sword: { hand: "b" }, plane: { x: "1", y: 2 } }));
   assert.equal(messy.hand("a"), "hammer");
   assert.equal(messy.where("ball").at, "rack");
-  assert.equal(messy.where("plane").at, "rack");
+  assert.equal(messy.view().toys.length, toys.TOY_IDS.length);
+  assert.equal(messy.view().toys.some((toy) => toy.id === "plane" || toy.id === "pinch"), false, "removed toys from old saves are ignored");
   assert.equal(new toys.ToyRoom("nope").where("hammer").at, "rack");
 });
 
@@ -1008,7 +1009,7 @@ test("toys: per-player cooldown, per-target cap and reach", () => {
   // The cap counts every hit on one person, from anyone, inside the window.
   const capped = new toys.ToyRoom();
   const rack = { x: 0, y: 0 };
-  for (let i = 0; i < toys.TARGET_CAP + 1; i++) capped.take(`p${i}`, ["hammer", "ball", "plane", "pillow", "pinch", "ram"][i % 6], 0, 0, rack, false);
+  for (let i = 0; i < toys.TARGET_CAP + 1; i++) capped.take(`p${i}`, toys.TOY_IDS[i % toys.TOY_IDS.length], 0, 0, rack, false);
   let landed = 0;
   for (let i = 0; i < toys.TARGET_CAP + 4; i++) {
     const who = `x${i}`;
@@ -1068,16 +1069,15 @@ test("toys: the catch window is enforced by the server and a missed ball drops",
   assert.deepEqual(room.take("b", "ball", 320, 100, null, false).ok, true);
 });
 
-test("toys: paper plane needs text, pinch is capped by the server", () => {
-  const room = toyRoomWith({ a: "plane", b: "pinch" });
+test("toys: pinching needs no toy and is capped by the server", () => {
+  const room = new toys.ToyRoom();
   const t0 = 9_000;
-  assert.deepEqual(room.plane(body("a", 0, 0), body("c", 200, 0), null, t0), { ok: false, reason: "empty" });
-  assert.deepEqual(room.plane(body("a", 0, 0), body("c", toys.PLANE_REACH + 1, 0), "hi", t0), { ok: false, reason: "far" });
-  assert.deepEqual(room.plane(body("a", 0, 0), body("c", 200, 0), "hi", t0), { ok: true, to: "c" });
-  assert.deepEqual(room.plane(body("a", 0, 0), body("c", 200, 0), "hi", t0 + 10), { ok: false, reason: "cool" });
+  assert.deepEqual(room.pinchStart(body("b", 0, 0), body("c", 31 + 31 + toys.HIT_GAP + 1, 0), t0), { ok: false, reason: "far" });
+  assert.deepEqual(room.pinchStart(body("b", 0, 0), null, t0), { ok: false, reason: "none" });
   const started = room.pinchStart(body("b", 0, 0), body("c", 70, 0), t0);
   assert.deepEqual(started, { ok: true, to: "c", ms: toys.PINCH_MAX_MS });
-  assert.deepEqual(room.pinchStart(body("b", 0, 0), body("c", 70, 0), t0 + toys.TOY_COOLDOWN_MS.pinch), { ok: false, reason: "busy" });
+  assert.equal(room.hand("b"), "", "nothing was taken from the rack");
+  assert.deepEqual(room.pinchStart(body("b", 0, 0), body("c", 70, 0), t0 + toys.ACTION_COOLDOWN_MS.pinch), { ok: false, reason: "busy" });
   assert.equal(room.pinchEnd("c"), null);
   assert.equal(room.settle(t0 + toys.PINCH_MAX_MS - 1).pinch, null);
   assert.deepEqual(room.settle(t0 + toys.PINCH_MAX_MS).pinch, { by: "b", to: "c", until: t0 + toys.PINCH_MAX_MS });
@@ -1085,10 +1085,87 @@ test("toys: paper plane needs text, pinch is capped by the server", () => {
   const again = room.pinchStart(body("b", 0, 0), body("c", 70, 0), t0 + 5000);
   assert.equal(again.ok, true);
   assert.equal(room.pinchEnd("b").to, "c");
-  // The server cuts plane text with the chat cleanup.
+  // The paper plane is gone, so the server has no letter path left.
   const source = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
-  assert.match(source, /const text = normalizeChat\(body\.text\);\s*const result = this\.toys\.plane\(/);
-  assert.equal([...content.normalizeChat("好".repeat(120))].length, 80);
+  assert.doesNotMatch(source, /plane|letter/i);
+  assert.equal("plane" in toys.TOY_COOLDOWN_MS, false);
+});
+
+test("toys: every play toy needs to be in hand, has its own reach and cooldown", () => {
+  assert.equal(toys.TOY_IDS.length, 11);
+  assert.equal(toys.TOY_IDS.length, new Set(toys.TOY_IDS).size);
+  const t0 = 50_000;
+  for (const toy of toys.PLAY_TOYS) {
+    const room = toyRoomWith({ a: toy });
+    const reach = toys.TOY_RANGE[toy] ?? 31 + 31 + toys.HIT_GAP;
+    const by = body("a", 0, 0);
+    assert.deepEqual(room.play(body("z", 0, 0), body("t", 40, 0), toy, t0), { ok: false, reason: "wrong" }, toy);
+    assert.deepEqual(room.play(by, body("t", reach + 1, 0), toy, t0), { ok: false, reason: "far" }, toy);
+    assert.deepEqual(room.play(by, body("t", reach, 0), toy, t0), { ok: true, to: "t" }, toy);
+    assert.deepEqual(room.play(by, body("t", reach, 0), toy, t0 + toys.TOY_COOLDOWN_MS[toy] - 1), { ok: false, reason: "cool" }, toy);
+    assert.equal(room.play(by, body("t", reach, 0), toy, t0 + toys.TOY_COOLDOWN_MS[toy]).ok, true, toy);
+    assert.equal(toys.isPlayToy(toy), true);
+  }
+  assert.equal(toys.isPlayToy("ball"), false);
+  assert.equal(toys.isPlayToy("ram"), false);
+  // The server sends each play toy through the same path; hammer keeps its bonk.
+  const source = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
+  assert.match(source, /isPlayToy\(toy\)\) \{\s*const result = this\.toys\.play\(me, target, toy, now\);/);
+  assert.match(source, /const kind = toy === "hammer" \? "bonk" : toy;/);
+});
+
+test("toys: bumping needs no toy, pushes along a clear path and stays server-side", () => {
+  const room = new toys.ToyRoom();
+  const t0 = 70_000;
+  const spot = { x: 100, y: 260 };
+  const find = (who, nx, ny) => {
+    assert.equal(who.id, "b");
+    assert.ok(Math.abs(nx) < 1e-9 && Math.abs(ny - 1) < 1e-9);
+    return spot;
+  };
+  const me = body("a", 100, 100);
+  assert.deepEqual(room.bump(me, body("b", 100, 100 + 31 + 31 + toys.HIT_GAP + 1), t0, find), { ok: false, reason: "far" });
+  assert.deepEqual(room.bump(me, me, t0, find), { ok: false, reason: "self" });
+  assert.deepEqual(room.bump(body("a", 100, 100, { seated: true }), body("b", 100, 160), t0, find), { ok: false, reason: "seated" });
+  assert.deepEqual(room.bump(me, body("b", 100, 160, { seated: true }), t0, find), { ok: false, reason: "seated" });
+  assert.deepEqual(room.bump(me, body("b", 100, 160), t0, find), { ok: true, to: "b", spot, nx: 0, ny: 1 });
+  assert.equal(room.hand("a"), "");
+  assert.equal(room.bump(me, body("b", 100, 160), t0 + 10, find).reason, "cool");
+  // Inside the knock window a second bump from someone else only wobbles.
+  const wobble = room.bump(body("c", 100, 100), body("b", 100, 160), t0 + 100, () => assert.fail("must not look for a spot"));
+  assert.equal(wobble.ok, true);
+  assert.equal(wobble.spot, null);
+  const later = room.bump(body("c", 100, 100), body("b", 100, 160), t0 + toys.KNOCK_WINDOW_MS + toys.ACTION_COOLDOWN_MS.bump, () => spot);
+  assert.deepEqual(later.spot, spot);
+  // Real floor: a bump by hand slides farther than the car but never into a wall.
+  const office = content.buildOffice();
+  const solids = office.furniture.filter((item) => content.FURNITURE[item.kind]?.solid && item.kind !== "chair");
+  const clear = toys.openFloor({ walls: office.walls, props: office.props, furniture: solids, bodies: [], bodyRadius: 31 });
+  const open = { x: 15 * 32, y: 17 * 32 };
+  assert.deepEqual(toys.knockSpot(open, 1, 0, clear, toys.BUMP_DISTANCES), { x: open.x + toys.BUMP_DISTANCES[0], y: open.y });
+  const nearWall = { x: 32 + 11 + 30, y: 17 * 32 };
+  const short = toys.knockSpot(nearWall, -1, 0, clear, toys.BUMP_DISTANCES);
+  assert.ok(short && short.x < nearWall.x && content.hitsWall(office.walls, short.x, short.y, content.WALL_RADIUS) === false, JSON.stringify(short));
+  // The server moves the person itself and drops their stale moves for a moment.
+  const source = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
+  assert.match(source, /op === "ram" \? this\.toys\.ram\(me, target, now, find\) : this\.toys\.bump\(me, target, now, find\)/);
+  assert.match(source, /far \? BUMP_DISTANCES : KNOCK_DISTANCES/);
+  assert.match(source, /private knockTo\(id: string, spot: \{ x: number; y: number \}, now: number\) \{\s*const hit = this\.socketOf\(id\);\s*if \(!hit\) return;\s*hit\.att\.x = spot\.x;\s*hit\.att\.y = spot\.y;/);
+});
+
+test("toys: Lala puts floor toys and toys of people who left back on the rack", () => {
+  const room = toyRoomWith({ a: "hammer", b: "wand", c: "frisbee" });
+  room.drop("a", 300, 300);
+  const moved = room.tidy((id) => id === "c");
+  assert.deepEqual(moved.sort(), ["hammer", "wand"]);
+  assert.equal(room.where("hammer").at, "rack");
+  assert.equal(room.hand("b"), "");
+  assert.equal(room.hand("c"), "frisbee", "people still here keep their toy");
+  assert.deepEqual(room.tidy(() => true), []);
+  const source = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
+  assert.match(source, /if \(op === "tidy"\) \{\s*if \(Math\.hypot\(att\.x - this\.map\.lala\.x, att\.y - this\.map\.lala\.y\) > LALA_REACH\)/);
+  const client = readFileSync(join(import.meta.dirname, "../public/office/toys.js"), "utf8");
+  assert.match(client, /send\(\{ t: "toy", op: "tidy" \}\)/);
 });
 
 test("toys: running is told from walking by the server's own move samples", () => {
@@ -1144,10 +1221,10 @@ test("toys: knockback stays out of walls, furniture, the map edge and other peop
   assert.equal(toys.knockSpot({ x: NaN, y: 0 }, 1, 0, clear), null);
 });
 
-test("toys: ramming needs the car, a run, a standing target, and only knocks once per window", () => {
+test("toys: ramming needs the car, a drive, a standing target, and only knocks once per window", () => {
   const room = toyRoomWith({ a: "ram", c: "hammer" });
   const run = (start) => {
-    for (let i = 0; i < 8; i++) room.track("a", 100, 100 + (280 * i * 90) / 1000, start + i * 90);
+    for (let i = 0; i < 8; i++) room.track("a", 100, 100 + (170 * i * 90) / 1000, start + i * 90);
     return start + 7 * 90 + 10;
   };
   const spot = { x: 100, y: 300 };
@@ -1167,16 +1244,23 @@ test("toys: ramming needs the car, a run, a standing target, and only knocks onc
   });
   assert.deepEqual(hit, { ok: true, to: "b", spot, nx: 0, ny: 1 });
   assert.equal(room.ram(attacker, target, now + 10, find).reason, "cool");
-  // A second ram inside the knock window only wobbles; no position comes back.
-  now = run(now + toys.TOY_COOLDOWN_MS.ram);
-  const wobble = room.ram(attacker, target, now, () => assert.fail("must not look for a spot"));
+  // A bump on the same person inside the knock window only wobbles; no position comes back.
+  const wobble = room.bump(body("e", 100, 100), target, now + 20, () => assert.fail("must not look for a spot"));
   assert.equal(wobble.ok, true);
   assert.equal(wobble.spot, null);
+  // The car's cooldown outlasts the knock window, so the next ram knocks again.
+  assert.ok(toys.TOY_COOLDOWN_MS.ram >= toys.KNOCK_WINDOW_MS);
+  now = run(now + toys.TOY_COOLDOWN_MS.ram);
+  assert.deepEqual(room.ram(attacker, target, now, find).spot, spot);
   // No valid spot: still ok, just a wobble.
-  now = run(now + toys.KNOCK_WINDOW_MS);
+  now = run(now + toys.TOY_COOLDOWN_MS.ram);
   const nowhere = room.ram(attacker, body("d", 100, 162), now, () => null);
   assert.equal(nowhere.ok, true);
   assert.equal(nowhere.spot, null);
+  // Standing still in the car does nothing.
+  const parked = toyRoomWith({ p: "ram" });
+  for (let i = 0; i < 8; i++) parked.track("p", 100, 100, i * 90);
+  assert.equal(parked.ram(body("p", 100, 100), target, 700, find).reason, "walking");
 });
 
 test("toys: the rack is fixed furniture in the game room and the client lists every toy", () => {
@@ -1194,11 +1278,18 @@ test("toys: the rack is fixed furniture in the game room and the client lists ev
   for (const item of toys.TOY_ITEMS) assert.match(client, new RegExp(`id: "${item.id}"`));
   const furnish = readFileSync(join(import.meta.dirname, "../public/office/furnish.js"), "utf8");
   const license = readFileSync(join(import.meta.dirname, "../public/office/assets/kenney/LICENSE.txt"), "utf8");
-  for (const name of ["bookcaseOpenLow", "bear", "tool-hammer", "ball-red", "vehicle-racer", "pillow"]) {
+  for (const name of ["bookcaseOpenLow", "vehicle-racer", "pillow"]) {
     assert.match(furnish, new RegExp(`"${name}"`));
     assert.equal(existsSync(join(import.meta.dirname, "../public/office/assets/kenney", `${name}.glb`)), true, name);
     assert.match(license, new RegExp(name.replace("-", "\\-")), name);
   }
+  // Old stand-in models are gone from the files, the loader and the license.
+  for (const name of ["bear", "tool-hammer", "ball-red"]) {
+    assert.doesNotMatch(furnish, new RegExp(`"${name}"`));
+    assert.equal(existsSync(join(import.meta.dirname, "../public/office/assets/kenney", `${name}.glb`)), false, name);
+    assert.doesNotMatch(license, new RegExp(`${name}\\.glb`), name);
+  }
+  assert.doesNotMatch(client, /paper ?plane|紙飛機|letter/i);
 });
 
 test("emergency reset spots avoid solid furniture and props", () => {

@@ -11,7 +11,6 @@ export const HIT_GAP = 34;
 /** Running into someone counts when bodies are this close past touching. */
 export const RAM_GAP = 22;
 export const THROW_REACH = 320;
-export const PLANE_REACH = 480;
 export const BALL_FLIGHT_MS = 900;
 /** The catch key works from a moment after the throw until a little after the ball arrives. */
 export const CATCH_OPEN_MS = 200;
@@ -20,33 +19,72 @@ export const PINCH_MAX_MS = 2000;
 /** Effects one person can receive inside the window, from everyone together. */
 export const TARGET_CAP = 6;
 export const TARGET_WINDOW_MS = 10000;
-/** One knockback per person inside this window; later rams only wobble. */
-export const KNOCK_WINDOW_MS = 6000;
+/** One knockback per person inside this window; later bumps only wobble. */
+export const KNOCK_WINDOW_MS = 2500;
 export const RUN_SPEED = 215;
+/** The bumper car knocks people over at walking pace too. */
+export const DRIVE_SPEED = 110;
 export const RUN_SPAN_MS = 700;
 export const KNOCK_DISTANCES = [64, 52, 40, 28] as const;
+/** A bump by hand sends people a little farther than the bumper car does. */
+export const BUMP_DISTANCES = [88, 72, 56, 40, 28, 16] as const;
 export const KNOCK_STEP = 6;
 
-export const TOY_IDS = ["hammer", "ball", "plane", "pillow", "pinch", "ram"] as const;
+export const TOY_IDS = ["hammer", "ball", "pillow", "bubble", "water", "popper", "horn", "frisbee", "wand", "blower", "ram"] as const;
 export type ToyId = (typeof TOY_IDS)[number];
 
 export const TOY_ITEMS: ReadonlyArray<{ id: ToyId; label: string }> = [
-  { id: "hammer", label: "玩具錘子" },
-  { id: "ball", label: "丟接球" },
-  { id: "plane", label: "紙飛機" },
+  { id: "hammer", label: "嗶嗶槌" },
+  { id: "ball", label: "沙灘球" },
   { id: "pillow", label: "枕頭" },
-  { id: "pinch", label: "捏捏臉" },
+  { id: "bubble", label: "泡泡槍" },
+  { id: "water", label: "大水槍" },
+  { id: "popper", label: "拉炮" },
+  { id: "horn", label: "玩具喇叭" },
+  { id: "frisbee", label: "飛盤" },
+  { id: "wand", label: "魔法棒" },
+  { id: "blower", label: "吹龍" },
   { id: "ram", label: "撞撞車" },
 ];
 
 export const TOY_COOLDOWN_MS: Record<ToyId, number> = {
   hammer: 900,
   ball: 1500,
-  plane: 4000,
   pillow: 900,
-  pinch: 1500,
+  bubble: 1800,
+  water: 1500,
+  popper: 3000,
+  horn: 1200,
+  frisbee: 2000,
+  wand: 2500,
+  blower: 1200,
   ram: 3000,
 };
+
+/** Toys used straight on a coworker in reach. Touch toys reach past bodies; the rest have a fixed range. */
+export const PLAY_TOYS = ["hammer", "pillow", "bubble", "water", "popper", "horn", "frisbee", "wand", "blower"] as const;
+export type PlayToy = (typeof PLAY_TOYS)[number];
+export const TOY_RANGE: Record<PlayToy, number | null> = {
+  hammer: null,
+  pillow: null,
+  blower: null,
+  horn: 150,
+  popper: 150,
+  bubble: 260,
+  wand: 260,
+  water: 300,
+  frisbee: 320,
+};
+
+/** Things anyone can do to a coworker close by, no toy needed. */
+export const ACTION_COOLDOWN_MS = { bump: 2500, pinch: 1500 } as const;
+export type HandAction = keyof typeof ACTION_COOLDOWN_MS;
+
+const PLAYABLE = new Set<string>(PLAY_TOYS);
+
+export function isPlayToy(value: unknown): value is PlayToy {
+  return typeof value === "string" && PLAYABLE.has(value);
+}
 
 export type Anchor = { x: number; y: number };
 export type Body = { id: string; x: number; y: number; r: number; seated?: boolean };
@@ -265,8 +303,8 @@ export class ToyRoom {
     this.trails.set(playerId, trail);
   }
 
-  /** True when recent accepted moves average at least RUN_SPEED and the newest one is fresh. */
-  running(playerId: string, now: number): boolean {
+  /** True when recent accepted moves average at least `speed` and the newest one is fresh. */
+  running(playerId: string, now: number, speed = RUN_SPEED): boolean {
     const trail = (this.trails.get(playerId) || []).filter((point) => now - point.t <= RUN_SPAN_MS);
     if (trail.length < 3) return false;
     const first = trail[0];
@@ -276,7 +314,7 @@ export class ToyRoom {
     if (span < 180) return false;
     let dist = 0;
     for (let i = 1; i < trail.length; i++) dist += Math.hypot(trail[i].x - trail[i - 1].x, trail[i].y - trail[i - 1].y);
-    return (dist / span) * 1000 >= RUN_SPEED;
+    return (dist / span) * 1000 >= speed;
   }
 
   take(
@@ -313,7 +351,6 @@ export class ToyRoom {
     if (!toy) return { ok: false, reason: "empty" };
     if (!rack || !finite(x, y) || Math.hypot(x - rack.x, y - rack.y) > RACK_REACH) return { ok: false, reason: "far" };
     this.places.set(toy, { at: "rack" });
-    this.endPinchBy(playerId);
     return { ok: true, toy };
   }
 
@@ -322,27 +359,41 @@ export class ToyRoom {
     if (!toy) return { ok: false, reason: "empty" };
     if (!finite(x, y)) return { ok: false, reason: "far" };
     this.places.set(toy, { at: "floor", x, y });
-    this.endPinchBy(playerId);
     return { ok: true, toy, x, y };
   }
 
-  private endPinchBy(playerId: string) {
-    if (this.pinch?.by === playerId) this.pinch = null;
+  /**
+   * Lala tidies up: toys lying on the floor, and toys still in the hands of people
+   * who are not here, go back on the rack. A ball in the air is left to land.
+   */
+  tidy(present: (id: string) => boolean): ToyId[] {
+    const moved: ToyId[] = [];
+    for (const [id, place] of this.places) {
+      if (place.at === "floor" || (place.at === "hand" && !present(place.id))) {
+        this.places.set(id, { at: "rack" });
+        moved.push(id);
+      }
+    }
+    return moved;
   }
 
-  /** Shared checks for every effect: holding the right toy, own cooldown, target in reach, target cap. */
-  private gate(by: Body, target: Body | null, toy: ToyId, reach: number, now: number): Fail | null {
-    if (this.hand(by.id) !== toy) return { ok: false, reason: "wrong" };
+  /** Shared checks for every effect: own cooldown, target in reach, target cap. */
+  private gate(by: Body, target: Body | null, key: string, cooldown: number, reach: number, now: number): Fail | null {
     if (!target) return { ok: false, reason: "none" };
     if (target.id === by.id) return { ok: false, reason: "self" };
-    const key = `${by.id}:${toy}`;
-    const prev = this.last.get(key);
-    if (prev != null && now - prev < TOY_COOLDOWN_MS[toy]) return { ok: false, reason: "cool" };
+    const prev = this.last.get(`${by.id}:${key}`);
+    if (prev != null && now - prev < cooldown) return { ok: false, reason: "cool" };
     if (!finite(by.x, by.y, target.x, target.y) || Math.hypot(by.x - target.x, by.y - target.y) > reach) {
       return { ok: false, reason: "far" };
     }
     if (this.recentHits(target.id, now).length >= TARGET_CAP) return { ok: false, reason: "capped" };
     return null;
+  }
+
+  /** Same checks plus holding the right toy. */
+  private toyGate(by: Body, target: Body | null, toy: ToyId, reach: number, now: number): Fail | null {
+    if (this.hand(by.id) !== toy) return { ok: false, reason: "wrong" };
+    return this.gate(by, target, toy, TOY_COOLDOWN_MS[toy], reach, now);
   }
 
   private recentHits(targetId: string, now: number): number[] {
@@ -352,20 +403,29 @@ export class ToyRoom {
     return list;
   }
 
-  private spend(by: string, toy: ToyId, targetId: string, now: number) {
-    this.last.set(`${by}:${toy}`, now);
+  private spend(by: string, key: string, targetId: string, now: number) {
+    this.last.set(`${by}:${key}`, now);
     const list = this.recentHits(targetId, now);
     list.push(now);
     this.hits.set(targetId, list);
   }
 
-  /** Hammer bonk or pillow hit. */
-  hit(by: Body, target: Body | null, toy: "hammer" | "pillow", now: number): { ok: true; to: string } | Fail {
-    const reach = by.r + (target?.r ?? 0) + HIT_GAP;
-    const fail = this.gate(by, target, toy, reach, now);
+  /** Reach of a toy used on a coworker: touch toys reach just past both bodies. */
+  static reachOf(toy: PlayToy, by: Body, target: Body | null): number {
+    return TOY_RANGE[toy] ?? by.r + (target?.r ?? 0) + HIT_GAP;
+  }
+
+  /** Every toy that plays an effect on one coworker: hammer bonk, pillow hit, bubbles, water and the rest. */
+  play(by: Body, target: Body | null, toy: PlayToy, now: number): { ok: true; to: string } | Fail {
+    const fail = this.toyGate(by, target, toy, ToyRoom.reachOf(toy, by, target), now);
     if (fail || !target) return fail || { ok: false, reason: "none" };
     this.spend(by.id, toy, target.id, now);
     return { ok: true, to: target.id };
+  }
+
+  /** Hammer bonk or pillow hit. */
+  hit(by: Body, target: Body | null, toy: "hammer" | "pillow", now: number): { ok: true; to: string } | Fail {
+    return this.play(by, target, toy, now);
   }
 
   throwBall(
@@ -374,7 +434,7 @@ export class ToyRoom {
     now: number,
     dropFor: (target: Body, nx: number, ny: number) => Anchor,
   ): { ok: true; to: string; ms: number; drop: Anchor; combo: number } | Fail {
-    const fail = this.gate(by, target, "ball", THROW_REACH, now);
+    const fail = this.toyGate(by, target, "ball", THROW_REACH, now);
     if (fail || !target) return fail || { ok: false, reason: "none" };
     if (this.flight) return { ok: false, reason: "busy" };
     this.spend(by.id, "ball", target.id, now);
@@ -420,17 +480,10 @@ export class ToyRoom {
     return times.length ? Math.min(...times) : null;
   }
 
-  plane(by: Body, target: Body | null, text: string | null, now: number): { ok: true; to: string } | Fail {
-    if (!text) return { ok: false, reason: "empty" };
-    const fail = this.gate(by, target, "plane", PLANE_REACH, now);
-    if (fail || !target) return fail || { ok: false, reason: "none" };
-    this.spend(by.id, "plane", target.id, now);
-    return { ok: true, to: target.id };
-  }
-
+  /** Pinching a coworker's cheeks needs no toy, only to stand right next to them. */
   pinchStart(by: Body, target: Body | null, now: number): { ok: true; to: string; ms: number } | Fail {
     const reach = by.r + (target?.r ?? 0) + HIT_GAP;
-    const fail = this.gate(by, target, "pinch", reach, now);
+    const fail = this.gate(by, target, "pinch", ACTION_COOLDOWN_MS.pinch, reach, now);
     if (fail || !target) return fail || { ok: false, reason: "none" };
     if (this.pinch) return { ok: false, reason: "busy" };
     this.spend(by.id, "pinch", target.id, now);
@@ -445,10 +498,45 @@ export class ToyRoom {
     return ended;
   }
 
+  /** Direction away from the bumper and, unless this person was just knocked, where they land. */
+  private knock(
+    by: Body,
+    target: Body,
+    now: number,
+    find: (target: Body, nx: number, ny: number) => Anchor | null,
+  ): { spot: Anchor | null; nx: number; ny: number } {
+    let nx = target.x - by.x;
+    let ny = target.y - by.y;
+    const len = Math.hypot(nx, ny) || 1;
+    nx /= len;
+    ny /= len;
+    const prev = this.knocked.get(target.id);
+    if (prev != null && now - prev < KNOCK_WINDOW_MS) return { spot: null, nx, ny };
+    const spot = find(target, nx, ny);
+    if (spot) this.knocked.set(target.id, now);
+    return { spot, nx, ny };
+  }
+
   /**
-   * Running into someone with the bumper car. The knockback spot comes from `find`, which must
-   * only return a position whose whole path is clear; null means the target just wobbles.
+   * Bumping a coworker standing next to you, no toy needed. The landing spot comes from
+   * `find`, which must only return a position whose whole path is clear; null means they just wobble.
    */
+  bump(
+    by: Body,
+    target: Body | null,
+    now: number,
+    find: (target: Body, nx: number, ny: number) => Anchor | null,
+  ): { ok: true; to: string; spot: Anchor | null; nx: number; ny: number } | Fail {
+    if (by.seated) return { ok: false, reason: "seated" };
+    const reach = by.r + (target?.r ?? 0) + HIT_GAP;
+    const fail = this.gate(by, target, "bump", ACTION_COOLDOWN_MS.bump, reach, now);
+    if (fail || !target) return fail || { ok: false, reason: "none" };
+    if (target.seated) return { ok: false, reason: "seated" };
+    this.spend(by.id, "bump", target.id, now);
+    return { ok: true, to: target.id, ...this.knock(by, target, now, find) };
+  }
+
+  /** Driving the bumper car into someone knocks them away the same way a bump does. */
   ram(
     by: Body,
     target: Body | null,
@@ -457,20 +545,11 @@ export class ToyRoom {
   ): { ok: true; to: string; spot: Anchor | null; nx: number; ny: number } | Fail {
     const reach = by.r + (target?.r ?? 0) + RAM_GAP;
     if (by.seated) return { ok: false, reason: "seated" };
-    const fail = this.gate(by, target, "ram", reach, now);
+    const fail = this.toyGate(by, target, "ram", reach, now);
     if (fail || !target) return fail || { ok: false, reason: "none" };
     if (target.seated) return { ok: false, reason: "seated" };
-    if (!this.running(by.id, now)) return { ok: false, reason: "walking" };
+    if (!this.running(by.id, now, DRIVE_SPEED)) return { ok: false, reason: "walking" };
     this.spend(by.id, "ram", target.id, now);
-    let nx = target.x - by.x;
-    let ny = target.y - by.y;
-    const len = Math.hypot(nx, ny) || 1;
-    nx /= len;
-    ny /= len;
-    const prev = this.knocked.get(target.id);
-    if (prev != null && now - prev < KNOCK_WINDOW_MS) return { ok: true, to: target.id, spot: null, nx, ny };
-    const spot = find(target, nx, ny);
-    if (spot) this.knocked.set(target.id, now);
-    return { ok: true, to: target.id, spot, nx, ny };
+    return { ok: true, to: target.id, ...this.knock(by, target, now, find) };
   }
 }

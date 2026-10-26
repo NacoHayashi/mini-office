@@ -7,47 +7,236 @@ const PICK_REACH = 60;
 const HIT_GAP = 34;
 const RAM_GAP = 22;
 const THROW_REACH = 320;
-const PLANE_REACH = 480;
 const CATCH_OPEN_MS = 200;
 const CATCH_GRACE_MS = 450;
 const RAM_COOL_MS = 3000;
+const BUMP_COOL_MS = 2500;
 const HEAR = 560;
+const RANGE = { horn: 150, popper: 150, bubble: 260, wand: 260, water: 300, frisbee: 320 };
 
-const ITEMS = [
-  { id: "hammer", label: "玩具錘子", model: "tool-hammer", hand: [8, 4, 4], rack: [12, 6, 6] },
-  { id: "ball", label: "丟接球", model: "ball-red", hand: [5, 5, 5], rack: [7, 7, 7] },
-  { id: "plane", label: "紙飛機", model: null, hand: [6, 2, 8], rack: [9, 3, 11] },
-  { id: "pillow", label: "枕頭", model: "pillow", hand: [10, 8, 5], rack: [12, 9, 6] },
-  { id: "pinch", label: "捏捏臉", model: "bear", hand: [6, 7, 7], rack: [9, 9, 10] },
-  { id: "ram", label: "撞撞車", model: "vehicle-racer", hand: [5, 6, 8], rack: [8, 12, 6] },
-];
-const BY_ID = new Map(ITEMS.map((item) => [item.id, item]));
+const PASTEL = { pink: 0xffa8c8, peach: 0xffc6a0, butter: 0xffe48a, mint: 0xa6e8cf, sky: 0x9fd4ff, lilac: 0xcdb4ff, cream: 0xfffdf6 };
 const gradient = stepGradient([176, 222, 255]);
 
 function toon(color, extra = {}) {
   return new THREE.MeshToonMaterial({ color, gradientMap: gradient, ...extra });
 }
 
-// Kenney has no paper plane, so this one is a single folded dart: four flat triangles.
-function paperPlane() {
-  const geometry = new THREE.BufferGeometry();
-  const nose = [0, 0, 5];
-  const tail = [0, 0, -5];
-  const keel = [0, -1.3, -4.4];
-  const left = [-4, 0.5, -5];
-  const right = [4, 0.5, -5];
-  const flat = [...nose, ...left, ...tail, ...nose, ...tail, ...right, ...nose, ...keel, ...tail, ...nose, ...tail, ...keel];
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(flat, 3));
-  geometry.computeVertexNormals();
-  const mesh = new THREE.Mesh(geometry, toon(0xfffdf8, { side: THREE.DoubleSide }));
+function part(geometry, color, extra) {
+  const mesh = new THREE.Mesh(geometry, toon(color, extra));
   mesh.userData.own = true;
   return mesh;
 }
 
-function fallbackBall() {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(3.5, 12, 10), toon(0xf26d6d));
-  mesh.userData.own = true;
+/** Turns a shape built along +y so it points along +z (forward). */
+function forward(mesh) {
+  mesh.rotation.x = Math.PI / 2;
   return mesh;
+}
+
+// ---- procedural toy models (toon, pastel, no outlines) -----------------------
+// Each is built with the grip at the origin and the business end toward +z or +y.
+
+// An inflatable squeaky hammer: a fat rounded pink head with white bands, a butter handle.
+function squeakyHammer() {
+  const group = new THREE.Group();
+  const handle = part(new THREE.CylinderGeometry(0.95, 1.1, 12, 12), PASTEL.butter);
+  handle.position.y = 4;
+  const knob = part(new THREE.SphereGeometry(1.4, 12, 10), PASTEL.peach);
+  knob.position.y = -2.2;
+  const head = part(new THREE.CapsuleGeometry(3.5, 6.5, 8, 16), PASTEL.pink);
+  head.rotation.z = Math.PI / 2;
+  head.position.y = 12.6;
+  head.userData.part = "head";
+  group.add(handle, knob, head);
+  for (const side of [-1, 1]) {
+    const band = part(new THREE.TorusGeometry(3.5, 0.6, 8, 20), PASTEL.cream);
+    band.rotation.y = Math.PI / 2;
+    band.position.set(side * 3.1, 12.6, 0);
+    const face = part(new THREE.SphereGeometry(1.5, 12, 8), PASTEL.cream);
+    face.scale.set(0.35, 1, 1);
+    face.position.set(side * 6.75, 12.6, 0);
+    group.add(band, face);
+  }
+  return group;
+}
+
+// A pastel beach ball: six soft colour gores with white caps.
+function beachBall() {
+  const geometry = new THREE.SphereGeometry(5, 24, 16).toNonIndexed();
+  const colors = [PASTEL.pink, PASTEL.cream, PASTEL.sky, PASTEL.cream, PASTEL.butter, PASTEL.cream].map((hex) => new THREE.Color(hex));
+  const cap = new THREE.Color(PASTEL.mint);
+  const pos = geometry.attributes.position;
+  const out = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i += 3) {
+    const x = (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3;
+    const y = (pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3;
+    const z = (pos.getZ(i) + pos.getZ(i + 1) + pos.getZ(i + 2)) / 3;
+    const angle = (Math.atan2(z, x) + Math.PI) / (Math.PI * 2);
+    const color = Math.abs(y) > 4.3 ? cap : colors[Math.floor(angle * 6) % 6];
+    for (let k = 0; k < 3; k++) out.set([color.r, color.g, color.b], (i + k) * 3);
+  }
+  geometry.setAttribute("color", new THREE.BufferAttribute(out, 3));
+  const ball = new THREE.Mesh(geometry, toon(0xffffff, { vertexColors: true }));
+  ball.userData.own = true;
+  ball.position.y = 5;
+  const group = new THREE.Group();
+  group.add(ball);
+  return group;
+}
+
+function bubbleGun() {
+  const group = new THREE.Group();
+  const grip = part(new THREE.CylinderGeometry(1.1, 1.3, 5, 10), PASTEL.lilac);
+  grip.position.set(0, 1.8, -1);
+  grip.rotation.x = -0.25;
+  const body = forward(part(new THREE.CapsuleGeometry(2, 5, 6, 12), PASTEL.mint));
+  body.position.set(0, 5, 1);
+  const ring = part(new THREE.TorusGeometry(1.9, 0.5, 8, 18), PASTEL.pink);
+  ring.position.set(0, 5, 5.8);
+  const bottle = part(new THREE.SphereGeometry(2, 14, 10), PASTEL.sky, { transparent: true, opacity: 0.7 });
+  bottle.position.set(0, 8, 0);
+  group.add(grip, body, ring, bottle);
+  return group;
+}
+
+// A chunky oversized water blaster with a see-through tank.
+function waterGun() {
+  const group = new THREE.Group();
+  const grip = part(new THREE.CylinderGeometry(1.3, 1.5, 6, 10), PASTEL.lilac);
+  grip.position.set(0, 2.6, -3);
+  grip.rotation.x = -0.2;
+  const body = forward(part(new THREE.CapsuleGeometry(2.6, 11, 6, 14), PASTEL.peach));
+  body.position.set(0, 6.4, 2);
+  const barrel = forward(part(new THREE.CylinderGeometry(0.9, 1.1, 5, 10), PASTEL.butter));
+  barrel.position.set(0, 6.8, 10.5);
+  const pump = forward(part(new THREE.CylinderGeometry(1.3, 1.3, 4.5, 10), PASTEL.pink));
+  pump.position.set(0, 3.6, 6.5);
+  const tank = forward(part(new THREE.CapsuleGeometry(2.2, 5, 6, 12), PASTEL.sky, { transparent: true, opacity: 0.75 }));
+  tank.position.set(0, 10.2, -0.5);
+  group.add(grip, body, barrel, pump, tank);
+  return group;
+}
+
+function partyPopper() {
+  const group = new THREE.Group();
+  const cone = part(new THREE.ConeGeometry(2.6, 8, 16, 1, true), PASTEL.pink, { side: THREE.DoubleSide });
+  cone.rotation.x = Math.PI;
+  cone.position.y = 5;
+  const bands = [PASTEL.butter, PASTEL.mint];
+  bands.forEach((color, i) => {
+    const band = part(new THREE.TorusGeometry(0.9 + i * 0.75, 0.32, 6, 16), color);
+    band.rotation.x = Math.PI / 2;
+    band.position.y = 3 + i * 2.4;
+    group.add(band);
+  });
+  const rim = part(new THREE.TorusGeometry(2.6, 0.4, 6, 18), PASTEL.butter);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = 9;
+  const string = part(new THREE.CylinderGeometry(0.2, 0.2, 2.6, 6), PASTEL.cream);
+  string.position.y = 0;
+  group.add(cone, rim, string);
+  return group;
+}
+
+// A bike horn: squeeze bulb at the back, flared bell at the front.
+function toyHorn() {
+  const group = new THREE.Group();
+  const bulb = part(new THREE.SphereGeometry(2.6, 14, 10), PASTEL.pink);
+  bulb.scale.set(1, 1, 1.15);
+  bulb.position.set(0, 2.4, -2.4);
+  const tube = forward(part(new THREE.CylinderGeometry(0.7, 0.8, 4, 10), PASTEL.butter));
+  tube.position.set(0, 2.4, 1.4);
+  const bell = forward(part(new THREE.CylinderGeometry(3.2, 0.9, 4, 18, 1, true), PASTEL.butter, { side: THREE.DoubleSide }));
+  bell.position.set(0, 2.4, 5.2);
+  group.add(bulb, tube, bell);
+  return group;
+}
+
+function frisbee() {
+  const points = [[0, 1.1], [3.2, 1], [4.6, 0.6], [5.2, 0], [5, -0.4], [4.4, -0.3]].map(([x, y]) => new THREE.Vector2(x, y));
+  const disc = part(new THREE.LatheGeometry(points, 24), PASTEL.lilac, { side: THREE.DoubleSide });
+  const ring = part(new THREE.TorusGeometry(3, 0.3, 6, 24), PASTEL.cream);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.y = 1.05;
+  const group = new THREE.Group();
+  group.add(disc, ring);
+  return group;
+}
+
+function starShape(outer, inner) {
+  const shape = new THREE.Shape();
+  for (let i = 0; i < 10; i++) {
+    const r = i % 2 ? inner : outer;
+    const a = (i / 10) * Math.PI * 2 + Math.PI / 2;
+    if (i === 0) shape.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    else shape.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  shape.closePath();
+  return shape;
+}
+
+function magicWand() {
+  const group = new THREE.Group();
+  const stick = part(new THREE.CylinderGeometry(0.45, 0.55, 12, 10), PASTEL.cream);
+  stick.position.y = 5;
+  const star = part(new THREE.ExtrudeGeometry(starShape(3.2, 1.4), { depth: 1, bevelEnabled: true, bevelSize: 0.4, bevelThickness: 0.4, bevelSegments: 2 }), PASTEL.butter);
+  star.position.set(0, 13.2, -0.5);
+  const gem = part(new THREE.SphereGeometry(0.9, 10, 8), PASTEL.pink);
+  gem.position.set(0, 13.2, 0.9);
+  const ribbon = part(new THREE.TorusGeometry(0.9, 0.3, 6, 12), PASTEL.lilac);
+  ribbon.rotation.x = Math.PI / 2;
+  ribbon.position.y = 10.4;
+  group.add(stick, star, gem, ribbon);
+  return group;
+}
+
+// A party blower: a mouthpiece and a curled paper tube that unrolls when blown.
+function partyBlower() {
+  const group = new THREE.Group();
+  const mouth = forward(part(new THREE.CylinderGeometry(0.75, 0.85, 3, 10), PASTEL.cream));
+  mouth.position.set(0, 2, 0);
+  const coil = part(new THREE.TorusGeometry(2.2, 0.85, 8, 20, Math.PI * 1.7), PASTEL.pink);
+  coil.rotation.y = Math.PI / 2;
+  coil.position.set(0, 4, 2.2);
+  coil.userData.part = "coil";
+  const tube = forward(part(new THREE.CylinderGeometry(0.85, 0.85, 12, 10), PASTEL.pink));
+  tube.geometry.translate(0, 6, 0);
+  tube.position.set(0, 2, 1.4);
+  tube.visible = false;
+  tube.userData.part = "tube";
+  const tassel = part(new THREE.SphereGeometry(0.8, 8, 6), PASTEL.butter);
+  tassel.position.set(0, 2, 13.4);
+  tassel.visible = false;
+  tassel.userData.part = "tassel";
+  group.add(mouth, coil, tube, tassel);
+  return group;
+}
+
+const ITEMS = [
+  { id: "hammer", label: "嗶嗶槌", build: squeakyHammer, hand: [9, 13, 6], rack: [11, 12, 7] },
+  { id: "ball", label: "沙灘球", build: beachBall, hand: [7, 7, 7], rack: [9, 9, 9] },
+  { id: "pillow", label: "枕頭", model: "pillow", hand: [10, 8, 5], rack: [11, 9, 6] },
+  { id: "bubble", label: "泡泡槍", build: bubbleGun, hand: [5, 7, 7], rack: [7, 9, 9] },
+  { id: "water", label: "大水槍", build: waterGun, hand: [6, 9, 12], rack: [7, 10, 11] },
+  { id: "popper", label: "拉炮", build: partyPopper, hand: [4, 7, 4], rack: [6, 10, 6] },
+  { id: "horn", label: "玩具喇叭", build: toyHorn, hand: [5, 5, 7], rack: [8, 8, 10] },
+  { id: "frisbee", label: "飛盤", build: frisbee, hand: [8, 2, 8], rack: [10, 3, 10] },
+  { id: "wand", label: "魔法棒", build: magicWand, hand: [5, 11, 3], rack: [7, 13, 4] },
+  { id: "blower", label: "吹龍", build: partyBlower, hand: [4, 5, 5], rack: [6, 8, 8] },
+  { id: "ram", label: "撞撞車", model: "vehicle-racer", hand: [5, 6, 8], rack: [8, 12, 6] },
+];
+const BY_ID = new Map(ITEMS.map((item) => [item.id, item]));
+
+/** Scales a procedural toy to fit its box. Held toys keep the grip at the origin. */
+function fitInto(node, size, inHand) {
+  const box = new THREE.Box3().setFromObject(node);
+  const dim = box.getSize(new THREE.Vector3());
+  const scale = Math.min(size[0] / Math.max(dim.x, 0.01), size[1] / Math.max(dim.y, 0.01), size[2] / Math.max(dim.z, 0.01));
+  node.scale.setScalar(scale);
+  if (!inHand) {
+    const mid = box.getCenter(new THREE.Vector3());
+    node.position.set(-mid.x * scale, -box.min.y * scale, -mid.z * scale);
+  }
 }
 
 // Kenney clones share geometry and materials with the loaded templates, so only
@@ -109,6 +298,8 @@ function ease(t) {
   return u * u * (3 - 2 * u);
 }
 
+const CONFETTI = [PASTEL.pink, PASTEL.butter, PASTEL.mint, PASTEL.sky, PASTEL.lilac, PASTEL.peach];
+
 export function attachToys(env) {
   const { state, world, $, send, sizeOf } = env;
   const places = new Map(ITEMS.map((item) => [item.id, { at: "rack" }]));
@@ -116,19 +307,19 @@ export function attachToys(env) {
   const effects = new Map();
   const particles = [];
   const flights = [];
-  const letters = [];
   let combo = 0;
   let incoming = null;
   let pinching = null;
   let ramAt = 0;
+  let bumpAt = 0;
   let menu = null;
-  let compose = null;
-  let reader = null;
+  let near = null;
   let openedAt = 0;
   let placedSig = "";
   let placed = [];
   let stars = null;
   let audio = null;
+  let pace = { x: 0, y: 0, at: 0, speed: 0 };
   const log = [];
 
   // ---- state -------------------------------------------------------------
@@ -176,29 +367,46 @@ export function attachToys(env) {
     return best;
   }
 
-  function reachFor(toy, person) {
-    const mine = env.bodyRadius(state.me?.look);
-    const theirs = env.bodyRadius(person.look);
-    if (toy === "ball") return THROW_REACH;
-    if (toy === "plane") return PLANE_REACH;
-    if (toy === "ram") return mine + theirs + RAM_GAP;
-    return mine + theirs + HIT_GAP;
+  /** Toys Lala can put away: on the floor, or still in the hand of someone who left. */
+  function messy() {
+    let count = 0;
+    for (const [, place] of places) {
+      if (place.at === "floor") count += 1;
+      else if (place.at === "hand" && place.holder !== state.me?.id && !state.others.has(place.holder)) count += 1;
+    }
+    return count;
   }
 
-  function target(toy = holding()) {
-    if (!state.me || !toy) return null;
+  function touch(person) {
+    return env.bodyRadius(state.me?.look) + env.bodyRadius(person.look) + HIT_GAP;
+  }
+
+  function reachFor(toy, person) {
+    if (toy === "ball") return THROW_REACH;
+    if (toy === "ram") return env.bodyRadius(state.me?.look) + env.bodyRadius(person.look) + RAM_GAP;
+    return RANGE[toy] ?? touch(person);
+  }
+
+  function closest(reach) {
+    if (!state.me) return null;
     let best = null;
     for (const person of state.others.values()) {
       const dist = Math.hypot(state.me.x - person.x, state.me.y - person.y);
-      if (dist > reachFor(toy, person)) continue;
+      if (dist > reach(person)) continue;
       if (!best || dist < best.dist) best = { person, dist };
     }
     return best?.person || null;
   }
 
-  function nameOf(id) {
-    if (id === state.me?.id) return state.me.displayName || id;
-    return state.others.get(id)?.displayName || id;
+  function target(toy = holding()) {
+    if (!state.me || !toy) return null;
+    return closest((person) => reachFor(toy, person));
+  }
+
+  /** The coworker close enough to bump or pinch, no toy needed. */
+  function closeBy() {
+    if (!state.me || state.seat) return null;
+    return closest(touch);
   }
 
   function emote(id, text, ms = 1800) {
@@ -258,18 +466,32 @@ export function attachToys(env) {
     const ctx = voice();
     if (!ctx) return;
     try {
-      if (kind === "bonk") {
-        // 「啵」: a quick pitch drop with a bright pop on top.
-        chirp(ctx, "sine", 760, 180, 0.16, 0.32);
-        chirp(ctx, "triangle", 1500, 620, 0.06, 0.12);
+      if (kind === "squeak") {
+        // 「嗶」: the squeaky hammer's toy whistle, plus a soft bonk underneath.
+        chirp(ctx, "square", 1250, 1700, 0.09, 0.07);
+        chirp(ctx, "square", 1700, 1100, 0.12, 0.06, 0.08);
+        chirp(ctx, "sine", 520, 160, 0.16, 0.24);
       } else if (kind === "pillow") puff(ctx, 0.22, 0.4);
       else if (kind === "catch") chirp(ctx, "square", 520, 880, 0.08, 0.08);
       else if (kind === "throw") chirp(ctx, "sine", 300, 620, 0.14, 0.12);
-      else if (kind === "plane") chirp(ctx, "sine", 980, 1400, 0.25, 0.06);
       else if (kind === "boing") {
         chirp(ctx, "sine", 240, 520, 0.12, 0.22);
         chirp(ctx, "sine", 520, 260, 0.2, 0.16, 0.12);
       } else if (kind === "pinch") chirp(ctx, "sine", 600, 900, 0.12, 0.1);
+      else if (kind === "bubble") for (let i = 0; i < 4; i++) chirp(ctx, "sine", 700 + i * 120, 1300 + i * 90, 0.07, 0.07, i * 0.09);
+      else if (kind === "water") puff(ctx, 0.45, 0.22);
+      else if (kind === "popper") {
+        puff(ctx, 0.12, 0.6);
+        chirp(ctx, "triangle", 1800, 900, 0.1, 0.1);
+      } else if (kind === "horn") {
+        chirp(ctx, "square", 420, 380, 0.14, 0.08);
+        chirp(ctx, "square", 420, 380, 0.16, 0.08, 0.2);
+      } else if (kind === "frisbee") chirp(ctx, "sine", 500, 900, 0.3, 0.06);
+      else if (kind === "wand") for (let i = 0; i < 5; i++) chirp(ctx, "sine", 900 + i * 220, 1100 + i * 220, 0.12, 0.06, i * 0.06);
+      else if (kind === "blower") {
+        chirp(ctx, "sawtooth", 300, 520, 0.35, 0.05);
+        puff(ctx, 0.2, 0.15);
+      }
     } catch {
       /* audio is optional */
     }
@@ -277,18 +499,17 @@ export function attachToys(env) {
 
   // ---- held props ---------------------------------------------------------
 
-  function makeProp(item, size) {
-    if (item.id === "plane") {
-      const plane = paperPlane();
-      const group = new THREE.Group();
-      plane.scale.setScalar(size[2] / 10);
-      group.add(plane);
-      return group;
+  function makeProp(item, size, inHand = false) {
+    let inner;
+    if (item.build) {
+      inner = item.build();
+      fitInto(inner, size, inHand);
+    } else {
+      inner = world.model?.(item.model, size[0], size[2], { maxHeight: size[1], stretch: 1.1 });
+      if (!inner) return null;
     }
-    const model = world.model?.(item.model, size[0], size[2], { maxHeight: size[1], stretch: 1.1 });
-    if (!model) return null;
     const group = new THREE.Group();
-    group.add(model);
+    group.add(inner);
     return group;
   }
 
@@ -315,11 +536,24 @@ export function attachToys(env) {
       held.set(id, pose);
     }
     if (!pose.prop) {
-      pose.prop = makeProp(BY_ID.get(toy), BY_ID.get(toy).hand);
+      pose.prop = makeProp(BY_ID.get(toy), BY_ID.get(toy).hand, true);
       if (pose.prop) actor.userData.armR.add(pose.prop);
     }
     return pose;
   }
+
+  const HOLD = {
+    hammer: [[1.6, 0, 1.2], [0.25, 0, -0.3]],
+    ball: [[1.8, 2, 2.2], [0, 0, 0]],
+    bubble: [[1.6, -0.6, 1.2], [0, 0, 0]],
+    water: [[1.6, -1, 0.4], [0, 0, 0]],
+    popper: [[1.6, 0, 1.4], [0.5, 0, 0]],
+    horn: [[1.6, -0.4, 1], [0, 0, 0]],
+    frisbee: [[2, 1.4, 1.6], [0, 0, 1.2]],
+    wand: [[1.6, 0, 1], [0.3, 0, -0.15]],
+    blower: [[1.4, -0.6, 1], [0, 0, 0]],
+    ram: [[2.2, 1.6, 0.8], [0, Math.PI / 2, 0]],
+  };
 
   function placeHeld(actor, pose, now) {
     const arm = actor.userData.armR;
@@ -327,26 +561,48 @@ export function attachToys(env) {
     arm.position.set(pose.rest.x + 2.4, pose.rest.y + 4.2, pose.rest.z + 0.4);
     const prop = pose.prop;
     if (!prop) return;
-    prop.position.set(2.2, 1.6, 0.8);
-    prop.rotation.set(0, 0, 0);
-    if (pose.toy === "hammer") {
-      prop.position.set(2, 0.6, 1);
-      prop.rotation.set(0.2, 0, -0.35);
-    } else if (pose.toy === "plane") prop.rotation.set(0.1, -0.4, 0);
-    else if (pose.toy === "ram") prop.rotation.set(0, Math.PI / 2, 0);
-    const swing = effects.get(pose.actor.userData.pid)?.swing;
-    if (swing) {
-      const t = (now - swing.t0) / 1000;
-      if (t > 0.45) effects.get(pose.actor.userData.pid).swing = null;
-      else {
-        // Wind up, then a quick bonk forward.
-        const lift = t < 0.15 ? t / 0.15 : Math.max(0, 1 - (t - 0.15) / 0.3);
-        arm.position.y += lift * 5;
-        arm.position.z += lift * 3;
-        if (pose.toy === "hammer") prop.rotation.x = -1.3 * lift + (t > 0.15 ? 1.1 * lift : 0);
-        else prop.rotation.z = 0.8 * lift;
-      }
+    const [at, turn] = HOLD[pose.toy] || [[2.2, 1.6, 0.8], [0, 0, 0]];
+    prop.position.set(at[0], at[1], at[2]);
+    prop.rotation.set(turn[0], turn[1], turn[2]);
+    const fx = effects.get(pose.actor.userData.pid);
+    prop.visible = !(fx?.away && now < fx.away);
+    if (pose.toy === "blower") paintBlower(prop, fx?.blow ? (now - fx.blow) / 1000 : -1, fx);
+    const swing = fx?.swing;
+    if (!swing) return;
+    const t = (now - swing.t0) / 1000;
+    if (t > 0.45) {
+      fx.swing = null;
+      return;
     }
+    // Wind up, then a quick bonk forward.
+    const lift = t < 0.15 ? t / 0.15 : Math.max(0, 1 - (t - 0.15) / 0.3);
+    if (pose.toy === "hammer" || pose.toy === "pillow" || pose.toy === "wand") {
+      arm.position.y += lift * 5;
+      arm.position.z += lift * 3;
+      if (pose.toy === "pillow") prop.rotation.z += 0.8 * lift;
+      else prop.rotation.x += t < 0.15 ? -1.4 * lift : 1.2 * lift;
+    } else {
+      // Aim forward with a small recoil.
+      arm.position.z += 2 * lift;
+      prop.rotation.x -= 0.25 * lift;
+    }
+  }
+
+  function paintBlower(prop, t, fx) {
+    let open = 0;
+    if (t >= 0 && t < 0.9) open = t < 0.15 ? t / 0.15 : t < 0.6 ? 1 : 1 - (t - 0.6) / 0.3;
+    else if (t >= 0.9 && fx) fx.blow = 0;
+    prop.traverse((node) => {
+      const role = node.userData?.part;
+      if (role === "coil") node.visible = open < 0.2;
+      else if (role === "tube") {
+        node.visible = open >= 0.2;
+        node.scale.y = Math.max(0.15, open);
+      } else if (role === "tassel") {
+        node.visible = open >= 0.2;
+        node.position.z = 1.4 + 12 * Math.max(0.15, open);
+      }
+    });
   }
 
   // ---- per-actor effects ---------------------------------------------------
@@ -372,6 +628,7 @@ export function attachToys(env) {
     rig.position.y = 0;
     rig.rotation.z = 0;
     if (!fx) return;
+    const lift = 1 / (actor.scale.y || 1);
     let sx = 1;
     let sy = 1;
     let sz = 1;
@@ -390,7 +647,44 @@ export function attachToys(env) {
     if (fx.wobble) {
       const t = (now - fx.wobble) / 1000;
       if (t > 1.2) fx.wobble = 0;
-      else rig.rotation.z += 0.32 * Math.exp(-3.6 * t) * Math.sin(t * 19);
+      else if (t >= 0) rig.rotation.z += 0.32 * Math.exp(-3.6 * t) * Math.sin(t * 19);
+    }
+    if (fx.shake) {
+      // Shaking off water: quick side-to-side shivers.
+      const t = (now - fx.shake) / 1000;
+      if (t > 1.1) fx.shake = 0;
+      else if (t >= 0) {
+        rig.rotation.z += 0.12 * Math.sin(t * 48) * (1 - t / 1.1);
+        sx *= 1 + 0.04 * Math.sin(t * 48);
+      }
+    }
+    if (fx.float) {
+      // Lifted by bubbles: drift up, bob, drift down.
+      const t = (now - fx.float) / 1000;
+      if (t > 2.4) fx.float = 0;
+      else if (t >= 0) rig.position.y += (10 * Math.sin((Math.PI * t) / 2.4) + Math.sin(t * 6) * 1.2) * lift;
+    }
+    if (fx.hop) {
+      // Startled by the horn: one jump with a stretch.
+      const t = (now - fx.hop) / 1000;
+      if (t > 0.6) fx.hop = 0;
+      else if (t >= 0) {
+        if (t < 0.4) rig.position.y += 12 * Math.sin((Math.PI * t) / 0.4) * lift;
+        sy *= 1 + 0.15 * Math.sin(Math.min(1, t / 0.4) * Math.PI);
+      }
+    }
+    if (fx.tiny) {
+      // The wand shrinks them for a moment, then they pop back with a spring.
+      const t = (now - fx.tiny) / 1000;
+      if (t > 2.6) fx.tiny = 0;
+      else if (t >= 0) {
+        const k = t < 0.25 ? ease(t / 0.25) : t < 1.6 ? 1 : spring(t - 1.6, 5, 16);
+        const f = 1 - 0.45 * k;
+        sx *= f;
+        sy *= f;
+        sz *= f;
+        fx.small = Math.min(fx.small ?? 1, f);
+      }
     }
     if (fx.pinch) {
       const p = fx.pinch;
@@ -423,8 +717,8 @@ export function attachToys(env) {
       else {
         actor.rotation.y += Math.PI * 2 * ease(t / 0.6);
         // Up in an arc, land, one small bounce.
-        if (t < 0.45) rig.position.y = 16 * Math.sin((Math.PI * t) / 0.45) / (actor.scale.y || 1);
-        else if (t < 0.7) rig.position.y = 4.5 * Math.sin((Math.PI * (t - 0.45)) / 0.25) / (actor.scale.y || 1);
+        if (t < 0.45) rig.position.y = 16 * Math.sin((Math.PI * t) / 0.45) * lift;
+        else if (t < 0.7) rig.position.y = 4.5 * Math.sin((Math.PI * (t - 0.45)) / 0.25) * lift;
         if (t > 0.42 && t < 0.56) {
           const land = 1 - Math.abs(t - 0.49) / 0.07;
           sy *= 1 - 0.18 * land;
@@ -463,9 +757,12 @@ export function attachToys(env) {
       if (place.at === "rack" && spot) {
         node = makeProp(item, item.rack);
         if (node) {
-          const col = slot % 3;
-          const row = Math.floor(slot / 3);
-          node.position.set(spot.x - spot.w / 3 + col * (spot.w / 3), 34, spot.y - 5 + row * 10);
+          // Four to a row: two rows on top of the low shelf and one on the middle shelf.
+          const col = slot % 4;
+          const row = Math.floor(slot / 4);
+          const x = spot.x - (spot.w * 3) / 8 + col * (spot.w / 4);
+          if (row < 2) node.position.set(x, 34, spot.y - 6 + row * 10);
+          else node.position.set(x, 17, spot.y + 2);
         }
         slot += 1;
       } else if (place.at === "floor") {
@@ -489,74 +786,122 @@ export function attachToys(env) {
     return person ? new THREE.Vector3(person.x, height, person.y) : null;
   }
 
-  function launch(kind, from, to, ms, extra = {}) {
+  function fly(node, from, to, ms, extra = {}) {
     const layer = world.fx;
-    const start = anchorOf(from, 30);
-    const end = anchorOf(to, kind === "plane" ? 40 : 30);
-    if (!layer || !start || !end) return;
-    const item = BY_ID.get(kind === "plane" ? "plane" : "ball");
-    const node = makeProp(item, kind === "plane" ? [10, 3, 12] : [7, 7, 7]) || fallbackBall();
+    const start = anchorOf(from, extra.fromY ?? 30);
+    if (!layer || !start || !node) {
+      disposeTree(node);
+      return;
+    }
     layer.add(node);
-    flights.push({ kind, node, start, end, t0: performance.now(), ms, arc: kind === "plane" ? 70 : 52, ...extra });
+    node.position.copy(start);
+    flights.push({ kind: "toy", node, start, to, ms, t0: performance.now() + (extra.delay || 0), arc: 52, toY: 30, spin: 14, ...extra });
   }
 
   function roll(from, x, y) {
+    const node = makeProp(BY_ID.get("ball"), [7, 7, 7]);
     const layer = world.fx;
     const start = anchorOf(from, 4);
-    if (!layer || !start) return;
-    const node = makeProp(BY_ID.get("ball"), [7, 7, 7]) || fallbackBall();
+    if (!layer || !start || !node) return;
     layer.add(node);
-    flights.push({ kind: "roll", node, start, end: new THREE.Vector3(x, 3.5, y), t0: performance.now(), ms: 480, arc: 0 });
+    flights.push({ kind: "roll", node, start, end: new THREE.Vector3(x, 0.5, y), t0: performance.now(), ms: 480, arc: 0, spin: 14 });
+  }
+
+  function dot(color, radius, extra = {}) {
+    return part(new THREE.SphereGeometry(radius, 10, 8), color, { transparent: true, ...extra });
+  }
+
+  function sparkle(size = 5) {
+    stars ||= starTexture();
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: stars, transparent: true, depthWrite: false }));
+    sprite.scale.setScalar(size);
+    sprite.userData.sprite = true;
+    return sprite;
+  }
+
+  function spawn(node, at, motion) {
+    const layer = world.fx;
+    if (!layer) return disposeTree(node);
+    node.position.copy(at);
+    layer.add(node);
+    particles.push({ node, t0: performance.now(), life: 1400, vx: 0, vy: 0, vz: 0, spin: 0, gravity: 60, ...motion });
+  }
+
+  function headOf(id, below = 0) {
+    const top = world.crown?.(id) ?? 60;
+    return anchorOf(id, top - below);
   }
 
   function burst(id, kind) {
-    const layer = world.fx;
     const actor = world.actor?.(id);
-    if (!layer || !actor) return;
+    if (!world.fx || !actor) return;
     const top = world.crown?.(id) ?? 60;
     const now = performance.now();
     if (kind === "stars") {
-      stars ||= starTexture();
       for (let i = 0; i < 5; i++) {
-        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: stars, transparent: true, depthWrite: false }));
-        sprite.scale.setScalar(7);
-        layer.add(sprite);
-        particles.push({ kind, node: sprite, id, t0: now, life: 950, angle: (i / 5) * Math.PI * 2, top });
+        const node = sparkle(7);
+        world.fx.add(node);
+        particles.push({ kind: "orbit", node, id, t0: now, life: 950, angle: (i / 5) * Math.PI * 2, top });
       }
       return;
     }
-    for (let i = 0; i < 12; i++) {
-      const feather = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.2), toon(0xfffdf8, { side: THREE.DoubleSide, transparent: true }));
-      feather.position.set(actor.position.x, top - 12, actor.position.z);
-      layer.add(feather);
+    const at = new THREE.Vector3(actor.position.x, top - 12, actor.position.z);
+    const many = { feathers: 12, confetti: 30, splash: 14, sparkles: 10, bubbles: 10 }[kind] || 10;
+    for (let i = 0; i < many; i++) {
       const a = Math.random() * Math.PI * 2;
       const speed = 22 + Math.random() * 26;
-      particles.push({
-        kind,
-        node: feather,
-        t0: now,
-        life: 1500,
-        vx: Math.cos(a) * speed,
-        vy: 26 + Math.random() * 28,
-        vz: Math.sin(a) * speed,
-        spin: (Math.random() - 0.5) * 9,
-      });
+      let node;
+      let motion = { vx: Math.cos(a) * speed, vz: Math.sin(a) * speed, vy: 26 + Math.random() * 28, spin: (Math.random() - 0.5) * 9, life: 1500 };
+      if (kind === "feathers") node = part(new THREE.PlaneGeometry(3.2, 1.2), PASTEL.cream, { side: THREE.DoubleSide, transparent: true });
+      else if (kind === "confetti") {
+        node = part(new THREE.PlaneGeometry(1.6, 2.4), CONFETTI[i % CONFETTI.length], { side: THREE.DoubleSide, transparent: true });
+        at.y = top + 6;
+        motion = { ...motion, vy: 50 + Math.random() * 40, spin: (Math.random() - 0.5) * 16, life: 1900, gravity: 70, drag: 2.5 };
+      } else if (kind === "splash") {
+        node = dot(PASTEL.sky, 0.9 + Math.random() * 0.6, { opacity: 0.85 });
+        motion = { ...motion, vy: 30 + Math.random() * 30, life: 800, gravity: 140 };
+      } else if (kind === "sparkles") {
+        node = sparkle(3 + Math.random() * 3);
+        motion = { ...motion, vy: 10 + Math.random() * 20, life: 1300, gravity: -10 };
+      } else {
+        node = dot(PASTEL.sky, 1.2 + Math.random() * 1.6, { opacity: 0.45 });
+        at.y = top - 20 + Math.random() * 10;
+        motion = { vx: Math.cos(a) * 8, vz: Math.sin(a) * 8, vy: 8 + Math.random() * 10, life: 2200, gravity: -6, sway: Math.random() * 6 };
+      }
+      spawn(node, at, { kind, ...motion });
     }
   }
 
   function frameHook(dt) {
     syncPlaced();
     const now = performance.now();
+    if (state.me) {
+      const step = Math.max(1, now - pace.at);
+      if (pace.at) pace.speed = pace.speed * 0.8 + (Math.hypot(state.me.x - pace.x, state.me.y - pace.y) / step) * 1000 * 0.2;
+      pace = { x: state.me.x, y: state.me.y, at: now, speed: pace.speed };
+    }
     for (let i = flights.length - 1; i >= 0; i--) {
       const f = flights[i];
+      if (now < f.t0) continue;
       const u = Math.min(1, (now - f.t0) / f.ms);
-      const end = f.kind === "roll" ? f.end : anchorOf(f.to || "", f.kind === "plane" ? 40 : 30) || f.end;
-      f.node.position.lerpVectors(f.start, end, f.kind === "roll" ? ease(u) : u);
-      f.node.position.y += f.kind === "roll" ? Math.abs(Math.sin(u * Math.PI * 2)) * 4 * (1 - u) : Math.sin(u * Math.PI) * f.arc;
-      if (f.kind === "plane") {
-        f.node.lookAt(end.x, f.node.position.y, end.z);
-        f.node.rotation.z = Math.sin(u * Math.PI * 3) * 0.35;
-      } else f.node.rotation.x += dt * 14;
+      if (f.kind === "roll") {
+        f.node.position.lerpVectors(f.start, f.end, ease(u));
+        f.node.position.y += Math.abs(Math.sin(u * Math.PI * 2)) * 4 * (1 - u);
+      } else {
+        const end = anchorOf(f.to || "", f.toY) || f.start;
+        if (f.back) {
+          // Out to them and back to the thrower like a boomerang.
+          const home = anchorOf(f.back, f.fromY ?? 30) || f.start;
+          if (u < 0.5) f.node.position.lerpVectors(f.start, end, ease(u * 2));
+          else f.node.position.lerpVectors(end, home, ease((u - 0.5) * 2));
+          f.node.position.y += Math.sin(u * Math.PI * 2) * 6;
+        } else {
+          f.node.position.lerpVectors(f.start, end, u);
+          f.node.position.y += Math.sin(u * Math.PI) * f.arc;
+        }
+      }
+      if (f.flat) f.node.rotation.y += dt * f.spin;
+      else f.node.rotation.x += dt * f.spin;
       if (u >= 1) {
         disposeTree(f.node);
         flights.splice(i, 1);
@@ -568,28 +913,29 @@ export function attachToys(env) {
       if (age > p.life) {
         p.node.removeFromParent();
         p.node.material?.dispose?.();
-        if (p.kind !== "stars") p.node.geometry?.dispose?.();
+        if (!p.node.userData?.sprite) p.node.geometry?.dispose?.();
         particles.splice(i, 1);
         continue;
       }
       const fade = 1 - age / p.life;
-      if (p.kind === "stars") {
+      if (p.kind === "orbit") {
         const actor = world.actor?.(p.id);
         if (!actor) continue;
         const a = p.angle + age / 160;
         p.node.position.set(actor.position.x + Math.cos(a) * 15, p.top + 4 + Math.sin(age / 90) * 2, actor.position.z + Math.sin(a) * 15);
         p.node.material.opacity = fade;
-      } else {
-        p.vy -= 60 * dt;
-        p.vx *= Math.exp(-2.5 * dt);
-        p.vz *= Math.exp(-2.5 * dt);
-        p.node.position.x += p.vx * dt;
-        p.node.position.y = Math.max(1, p.node.position.y + Math.max(p.vy, -12) * dt);
-        p.node.position.z += p.vz * dt;
-        p.node.rotation.x += p.spin * dt;
-        p.node.rotation.y += p.spin * 0.6 * dt;
-        p.node.material.opacity = Math.min(1, fade * 1.6);
+        continue;
       }
+      p.vy -= p.gravity * dt;
+      const drag = Math.exp(-(p.drag ?? 2.5) * dt);
+      p.vx *= drag;
+      p.vz *= drag;
+      p.node.position.x += (p.vx + (p.sway ? Math.sin(age / 200 + p.sway) * 6 : 0)) * dt;
+      p.node.position.y = Math.max(1, p.node.position.y + Math.max(p.vy, -18) * dt);
+      p.node.position.z += p.vz * dt;
+      p.node.rotation.x += p.spin * dt;
+      p.node.rotation.y += p.spin * 0.6 * dt;
+      p.node.material.opacity = Math.min(p.kind === "bubbles" ? 0.45 : 1, fade * 1.6);
     }
     if (incoming && now > incoming.until) incoming = null;
     if (pinching && now > pinching.until) pinching = null;
@@ -618,10 +964,8 @@ export function attachToys(env) {
     return node;
   }
 
-  function ensureHold() {
-    let node = $("toy-hold");
-    if (node) return node;
-    node = button("toy-hold", "按住捏臉");
+  /** Press-and-hold wiring shared by the phone pinch button and the desktop menu. */
+  function holdToPinch(node) {
     const end = (event) => {
       event.preventDefault();
       stopPinch();
@@ -640,6 +984,56 @@ export function attachToys(env) {
     node.addEventListener("pointercancel", end);
     node.addEventListener("lostpointercapture", end);
     node.addEventListener("contextmenu", (event) => event.preventDefault());
+  }
+
+  function ensureHold() {
+    let node = $("toy-hold");
+    if (node) return node;
+    node = button("toy-hold", "按住捏臉");
+    holdToPinch(node);
+    return node;
+  }
+
+  // The little menu that pops up next to a coworker on desktop.
+  function ensureNear() {
+    if (near) return near;
+    near = document.createElement("section");
+    near.id = "near-menu";
+    near.hidden = true;
+    near.setAttribute("aria-label", "對同事做的事");
+    near.innerHTML = '<div class="who"></div><div class="row"><button type="button" data-near="bump">撞飛<kbd>1</kbd></button><button type="button" data-near="pinch">捏臉<kbd>按住 2</kbd></button><button type="button" data-near="use" hidden></button></div>';
+    document.body.appendChild(near);
+    const bump = near.querySelector('[data-near="bump"]');
+    bump.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      bumpOn(closeBy());
+    });
+    holdToPinch(near.querySelector('[data-near="pinch"]'));
+    near.querySelector('[data-near="use"]').addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const toy = holding();
+      const who = target(toy);
+      if (who) useOn(who);
+    });
+    return near;
+  }
+
+  function ensureTidy() {
+    let node = $("btn-tidy");
+    if (node) return node;
+    const row = document.querySelector("#dialogue .row");
+    if (!row) return null;
+    node = document.createElement("button");
+    node.type = "button";
+    node.id = "btn-tidy";
+    node.hidden = true;
+    node.textContent = "玩具亂放了，麻煩收回架上";
+    node.addEventListener("click", () => send({ t: "toy", op: "tidy" }));
+    const later = $("btn-later");
+    if (later && later.parentElement === row) row.insertBefore(node, later);
+    else row.appendChild(node);
     return node;
   }
 
@@ -648,17 +1042,36 @@ export function attachToys(env) {
     const catchBtn = button("toy-catch", "接住！", () => catchBall());
     const showCatch = Boolean(incoming) && !busy && performance.now() >= incoming.open;
     if (catchBtn.hidden === showCatch) catchBtn.hidden = !showCatch;
-    const letterBtn = button("toy-letter", "", () => openLetter());
-    const showLetter = letters.length > 0 && !busy && !isOpen();
-    const label = letters.length ? `打開紙飛機（@${letters[0].from}）` : "";
-    if (letterBtn.textContent !== label) letterBtn.textContent = label;
-    if (letterBtn.hidden === showLetter) letterBtn.hidden = !showLetter;
+    const who = pinching ? null : closeBy();
     const hold = ensureHold();
-    const who = holding() === "pinch" ? target("pinch") : null;
     const showHold = env.phone() && !busy && !isOpen() && (Boolean(pinching) || Boolean(who));
     const holdLabel = pinching ? "放開" : who ? `按住捏 @${who.id} 的臉` : "按住捏臉";
     if (hold.textContent !== holdLabel) hold.textContent = holdLabel;
     if (hold.hidden === showHold) hold.hidden = !showHold;
+    const box = ensureNear();
+    const person = who || (pinching ? state.others.get(pinching.to) : null);
+    const showNear = !env.phone() && !busy && !isOpen() && Boolean(person);
+    if (box.hidden === showNear) box.hidden = !showNear;
+    if (showNear) {
+      const title = `@${person.id}`;
+      const head = box.querySelector(".who");
+      if (head.textContent !== title) head.textContent = title;
+      const toy = holding();
+      const use = box.querySelector('[data-near="use"]');
+      const aim = toy && toy !== "ram" && target(toy)?.id === person.id;
+      const label = aim ? `${VERB[toy](person.id)}<kbd>E</kbd>` : "";
+      if (use.dataset.label !== label) {
+        use.dataset.label = label;
+        use.innerHTML = label;
+      }
+      use.hidden = !aim;
+    }
+    const dialogue = $("dialogue");
+    if (dialogue && !dialogue.hidden) {
+      const tidy = ensureTidy();
+      const show = messy() > 0;
+      if (tidy && tidy.hidden === show) tidy.hidden = !show;
+    }
   }
 
   function ensureMenu() {
@@ -683,8 +1096,10 @@ export function attachToys(env) {
       }
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
       if (event.key.startsWith("Arrow")) event.stopImmediatePropagation();
-      if (menu && !menu.hidden && event.key >= "1" && event.key <= "6") {
-        const pick = menu.querySelectorAll("button.item")[Number(event.key) - 1];
+      // 1–9 pick the first nine toys, 0 the tenth.
+      if (/^[0-9]$/.test(event.key)) {
+        const index = event.key === "0" ? 9 : Number(event.key) - 1;
+        const pick = menu.querySelectorAll("button.item")[index];
         if (pick && !pick.disabled) pick.click();
       }
     }, true);
@@ -732,79 +1147,12 @@ export function attachToys(env) {
     (box.querySelector("button.item:not(:disabled)") || box.querySelector("#toy-close"))?.focus();
   }
 
-  function ensureCompose() {
-    if (compose) return compose;
-    compose = document.createElement("section");
-    compose.id = "toy-compose";
-    compose.className = "toy-card";
-    compose.hidden = true;
-    compose.setAttribute("role", "dialog");
-    compose.setAttribute("aria-modal", "true");
-    compose.innerHTML = '<form><div class="who" id="toy-compose-title">紙飛機</div><input id="toy-text" aria-label="要寫的話" maxlength="80" autocomplete="off" placeholder="寫一句話（最多 80 字）"><div class="row"><button type="submit" id="toy-send">丟出去</button><button type="button" class="ghost" id="toy-compose-close">取消</button></div></form>';
-    document.body.appendChild(compose);
-    compose.querySelector("#toy-compose-close").addEventListener("click", () => close());
-    compose.querySelector("form").addEventListener("submit", (event) => {
-      event.preventDefault();
-      const input = compose.querySelector("#toy-text");
-      const text = input.value.trim();
-      const to = compose.dataset.to;
-      if (!text || !to) return;
-      send({ t: "toy", op: "use", to, text });
-      input.value = "";
-      close();
-    });
-    compose.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        close();
-      }
-      event.stopPropagation();
-    });
-    return compose;
-  }
-
-  function openCompose(person) {
-    const box = ensureCompose();
-    box.dataset.to = person.id;
-    box.querySelector("#toy-compose-title").textContent = `寫紙飛機給 @${person.id}`;
-    box.hidden = false;
-    openedAt = performance.now();
-    state.path = [];
-    state.keys?.clear?.();
-    box.querySelector("#toy-text").focus();
-  }
-
-  function ensureReader() {
-    if (reader) return reader;
-    reader = document.createElement("section");
-    reader.id = "toy-read";
-    reader.className = "toy-card";
-    reader.hidden = true;
-    reader.setAttribute("role", "dialog");
-    reader.setAttribute("aria-modal", "true");
-    reader.innerHTML = '<div class="who" id="toy-read-from"></div><p id="toy-read-text"></p><div class="row"><button type="button" id="toy-read-close">收起來</button></div>';
-    document.body.appendChild(reader);
-    reader.querySelector("#toy-read-close").addEventListener("click", () => close());
-    return reader;
-  }
-
-  function openLetter() {
-    const letter = letters.shift();
-    if (!letter) return;
-    const box = ensureReader();
-    box.querySelector("#toy-read-from").textContent = `@${letter.from}（${letter.name}）的紙飛機`;
-    box.querySelector("#toy-read-text").textContent = letter.text;
-    box.hidden = false;
-    openedAt = performance.now();
-    box.querySelector("#toy-read-close").focus();
-  }
-
   function isOpen() {
-    return Boolean((menu && !menu.hidden) || (compose && !compose.hidden) || (reader && !reader.hidden));
+    return Boolean(menu && !menu.hidden);
   }
 
   function close() {
-    for (const box of [menu, compose, reader]) if (box) box.hidden = true;
+    if (menu) menu.hidden = true;
   }
 
   function dismiss() {
@@ -828,8 +1176,8 @@ export function attachToys(env) {
   }
 
   function startPinch() {
-    if (pinching || holding() !== "pinch") return false;
-    const who = target("pinch");
+    if (pinching) return false;
+    const who = closeBy();
     if (!who) return false;
     pinching = { to: who.id, until: performance.now() + 2000 };
     send({ t: "toy", op: "pinch", to: who.id, on: true });
@@ -842,15 +1190,19 @@ export function attachToys(env) {
     send({ t: "toy", op: "pinch", on: false });
   }
 
+  function bumpOn(person) {
+    if (!person || state.seat || env.blocked()) return false;
+    const now = performance.now();
+    if (now - bumpAt < BUMP_COOL_MS) return false;
+    bumpAt = now;
+    env.flush();
+    send({ t: "toy", op: "bump", to: person.id });
+    return true;
+  }
+
   function useOn(person) {
     const toy = holding();
-    if (!toy || !person) return false;
-    if (toy === "plane") {
-      openCompose(person);
-      return true;
-    }
-    if (toy === "pinch") return startPinch();
-    if (toy === "ram") return false;
+    if (!toy || !person || toy === "ram") return false;
     send({ t: "toy", op: "use", to: person.id });
     return true;
   }
@@ -870,6 +1222,21 @@ export function attachToys(env) {
     const floor = floorNear();
     if (floor && !toy) {
       send({ t: "toy", op: "take", toy: floor.id });
+      return true;
+    }
+    return false;
+  }
+
+  /** Desktop shortcuts next to a coworker: 1 bumps, holding 2 pinches. */
+  function key(name, down) {
+    if (isOpen() || env.blocked()) {
+      if (!down && name === "2") stopPinch();
+      return false;
+    }
+    if (name === "1" && down) return bumpOn(closeBy());
+    if (name === "2") {
+      if (down) return startPinch();
+      stopPinch();
       return true;
     }
     return false;
@@ -900,13 +1267,13 @@ export function attachToys(env) {
 
   function drop() {
     if (!holding()) return false;
-    stopPinch();
     send({ t: "toy", op: "drop" });
     return true;
   }
 
+  // Driving the bumper car into someone knocks them away; walking pace is enough.
   function bumped(id) {
-    if (holding() !== "ram" || !state.running || state.seat) return;
+    if (holding() !== "ram" || state.seat || !(state.walking || state.running)) return;
     const now = performance.now();
     if (now - ramAt < RAM_COOL_MS) return;
     const person = state.others.get(id);
@@ -917,11 +1284,16 @@ export function attachToys(env) {
   }
 
   const VERB = {
-    hammer: (id) => `敲 @${id} 的頭`,
+    hammer: (id) => `用嗶嗶槌敲 @${id}`,
     ball: (id) => `把球丟給 @${id}`,
-    plane: (id) => `寫紙飛機給 @${id}`,
     pillow: (id) => `用枕頭打 @${id}`,
-    pinch: (id) => `捏 @${id} 的臉`,
+    bubble: (id) => `對 @${id} 吹泡泡`,
+    water: (id) => `用水槍噴 @${id}`,
+    popper: (id) => `對 @${id} 拉拉炮`,
+    horn: (id) => `對 @${id} 按喇叭`,
+    frisbee: (id) => `把飛盤丟給 @${id}`,
+    wand: (id) => `對 @${id} 施魔法`,
+    blower: (id) => `對 @${id} 吹吹龍`,
   };
 
   function prompt() {
@@ -929,8 +1301,7 @@ export function attachToys(env) {
     const toy = holding();
     if (toy) {
       const who = target(toy);
-      if (toy === "ram") return "按住 Shift 跑步去撞同事 · Q 放下";
-      if (who && toy === "pinch") return `按住 E ${VERB.pinch(who.id)} · Q 放下`;
+      if (toy === "ram") return "開著撞撞車去撞同事 · Q 放下";
       if (who) return `按 E ${VERB[toy](who.id)} · Q 放下`;
       if (nearRack()) return "按 E 打開玩具架（可以放回去）";
       return "";
@@ -951,9 +1322,11 @@ export function attachToys(env) {
   function actions() {
     const list = [];
     const toy = holding();
+    const who = closeBy();
+    if (who) list.push({ id: "toy-bump", label: `撞飛 @${who.id}`, run: () => bumpOn(who) });
     if (toy) {
-      const who = toy === "ram" || toy === "pinch" ? null : target(toy);
-      if (who) list.push({ id: "toy-use", label: VERB[toy](who.id), run: () => useOn(who) });
+      const aim = toy === "ram" ? null : target(toy);
+      if (aim) list.push({ id: "toy-use", label: VERB[toy](aim.id), run: () => useOn(aim) });
       if (nearRack()) list.push({ id: "toy-rack", label: "玩具架", run: () => openMenu() });
       list.push({ id: "toy-drop", label: "放下玩具", run: () => drop() });
       return list;
@@ -966,7 +1339,7 @@ export function attachToys(env) {
 
   // ---- network --------------------------------------------------------------
 
-  function placeAfterRam(fx) {
+  function placeAfterKnock(fx) {
     if (!fx.knock) return;
     if (fx.to === state.me?.id) env.placeMe(fx.x, fx.y);
     else {
@@ -978,45 +1351,102 @@ export function attachToys(env) {
     }
   }
 
+  function later(ms, run) {
+    setTimeout(run, ms);
+  }
+
   function play(fx) {
     const now = performance.now();
     log.push({ ...fx, at: now });
     if (log.length > 40) log.shift();
-    if (fx.kind === "bonk") {
+    const kind = fx.kind;
+    if (kind === "bonk") {
       fxOf(fx.by).swing = { t0: now };
       fxOf(fx.to).squash = now + 120;
       fxOf(fx.to).low = 1;
-      setTimeout(() => {
+      later(120, () => {
         burst(fx.to, "stars");
-        if (heard(fx.to)) sound("bonk");
-      }, 120);
-      emote(fx.to, "啵！", 1400);
-    } else if (fx.kind === "pillow") {
+        if (heard(fx.to)) sound("squeak");
+      });
+      emote(fx.to, "嗶！", 1400);
+    } else if (kind === "pillow") {
       fxOf(fx.by).swing = { t0: now };
       fxOf(fx.to).wobble = now + 100;
-      setTimeout(() => {
+      later(100, () => {
         burst(fx.to, "feathers");
         if (heard(fx.to)) sound("pillow");
-      }, 100);
-    } else if (fx.kind === "throw") {
+      });
+    } else if (kind === "throw") {
       fxOf(fx.by).swing = { t0: now };
-      launch("ball", fx.by, fx.to, fx.ms || 900, { to: fx.to });
+      fly(makeProp(BY_ID.get("ball"), [7, 7, 7]), fx.by, fx.to, fx.ms || 900);
       if (heard(fx.by)) sound("throw");
       if (fx.to === state.me?.id) incoming = { open: now + CATCH_OPEN_MS, until: now + (fx.ms || 900) + CATCH_GRACE_MS, by: fx.by };
-    } else if (fx.kind === "catch") {
+    } else if (kind === "catch") {
       if (fx.by === state.me?.id) incoming = null;
       fxOf(fx.by).squash = now;
       emote(fx.by, fx.combo > 1 ? `接到了！連續 ${fx.combo} 次` : "接到了！", 2200);
       if (heard(fx.by)) sound("catch");
-    } else if (fx.kind === "fall") {
+    } else if (kind === "fall") {
       if (fx.to === state.me?.id) incoming = null;
       roll(fx.to, fx.x, fx.y);
       emote(fx.to, "沒接到～", 1600);
-    } else if (fx.kind === "plane") {
+    } else if (kind === "bubble") {
       fxOf(fx.by).swing = { t0: now };
-      launch("plane", fx.by, fx.to, 1300, { to: fx.to });
-      if (heard(fx.by)) sound("plane");
-    } else if (fx.kind === "pinch") {
+      for (let i = 0; i < 7; i++) fly(dot(PASTEL.sky, 1.4 + (i % 3) * 0.5, { opacity: 0.5 }), fx.by, fx.to, 700, { delay: i * 60, arc: 10 + i * 2, fromY: 24, toY: 32, spin: 2 });
+      later(650, () => {
+        burst(fx.to, "bubbles");
+        fxOf(fx.to).float = performance.now();
+        emote(fx.to, "飄起來了～", 2000);
+      });
+      if (heard(fx.by)) sound("bubble");
+    } else if (kind === "water") {
+      fxOf(fx.by).swing = { t0: now };
+      for (let i = 0; i < 9; i++) fly(dot(PASTEL.sky, 0.9, { opacity: 0.85 }), fx.by, fx.to, 320, { delay: i * 35, arc: 8, fromY: 22, toY: 30, spin: 0 });
+      later(360, () => {
+        burst(fx.to, "splash");
+        fxOf(fx.to).shake = performance.now();
+        emote(fx.to, "好冰！", 1600);
+      });
+      if (heard(fx.by)) sound("water");
+    } else if (kind === "popper") {
+      fxOf(fx.by).swing = { t0: now };
+      burst(fx.to, "confetti");
+      fxOf(fx.to).squash = now;
+      fxOf(fx.to).low = 1;
+      emote(fx.to, "恭喜恭喜！", 1800);
+      if (heard(fx.to)) sound("popper");
+    } else if (kind === "horn") {
+      fxOf(fx.by).swing = { t0: now };
+      fxOf(fx.to).hop = now + 80;
+      emote(fx.by, "叭叭！", 1200);
+      later(200, () => emote(fx.to, "嚇我一跳！", 1500));
+      if (heard(fx.by)) sound("horn");
+    } else if (kind === "frisbee") {
+      fxOf(fx.by).away = now + 1100;
+      fly(makeProp(BY_ID.get("frisbee"), [9, 2, 9]), fx.by, fx.to, 1100, { back: fx.by, fromY: 26, toY: 32, flat: true, spin: 18 });
+      later(550, () => {
+        fxOf(fx.to).wobble = performance.now();
+        emote(fx.to, "差點接到！", 1400);
+      });
+      if (heard(fx.by)) sound("frisbee");
+    } else if (kind === "wand") {
+      fxOf(fx.by).swing = { t0: now };
+      fly(sparkle(8), fx.by, fx.to, 450, { arc: 20, fromY: 34, toY: 40, spin: 0 });
+      later(450, () => {
+        burst(fx.to, "sparkles");
+        fxOf(fx.to).tiny = performance.now();
+        fxOf(fx.to).small = 1;
+        emote(fx.to, "變小了！", 1600);
+      });
+      if (heard(fx.by)) sound("wand");
+    } else if (kind === "blower") {
+      fxOf(fx.by).blow = now;
+      later(220, () => {
+        fxOf(fx.to).wobble = performance.now();
+        emote(fx.to, "噗～", 1300);
+      });
+      if (heard(fx.by)) sound("blower");
+    } else if (kind === "pinch") {
       if (fx.on) {
         fxOf(fx.to).pinch = { on: true, t0: now, until: now + (fx.ms || 2000) };
         fxOf(fx.by).pinchBy = { until: now + (fx.ms || 2000) };
@@ -1030,24 +1460,32 @@ export function attachToys(env) {
         if (effects.get(fx.by)) effects.get(fx.by).pinchBy = null;
         if (fx.by === state.me?.id) pinching = null;
       }
-    } else if (fx.kind === "ram") {
+    } else if (kind === "ram" || kind === "bump") {
       world.nudge?.(fx.by, -fx.nx, -fx.ny);
       if (fx.knock) {
         fxOf(fx.to).spin = now;
-        placeAfterRam(fx);
+        placeAfterKnock(fx);
         if (heard(fx.to)) sound("boing");
+        if (kind === "bump") emote(fx.to, "哇啊～", 1400);
       } else {
         fxOf(fx.to).wobble = now;
         world.nudge?.(fx.to, fx.nx, fx.ny);
       }
-    } else if (fx.kind === "hold" && fx.by === state.me?.id) close();
-    else if (fx.kind === "back" && fx.by === state.me?.id) paintMenu();
+    } else if (kind === "tidy") {
+      if (fx.by === state.me?.id) {
+        const text = $("dialogue-text");
+        if (text && !$("dialogue").hidden) text.textContent = fx.count > 0 ? `好的，${fx.count} 個玩具都收回玩具架了。` : "玩具都好好地在架上喔。";
+        const tidy = $("btn-tidy");
+        if (tidy) tidy.hidden = true;
+      }
+    } else if (kind === "hold" && fx.by === state.me?.id) close();
+    else if (kind === "back" && fx.by === state.me?.id) paintMenu();
   }
 
   function onNet(message) {
     if (!message || typeof message !== "object") return;
     if (message.t === "welcome") {
-      for (const [id, pose] of held) release(pose.actor, pose);
+      for (const [, pose] of held) release(pose.actor, pose);
       held.clear();
       effects.clear();
       incoming = null;
@@ -1063,20 +1501,18 @@ export function attachToys(env) {
       if (message.toy === "early") return;
       emote(state.me.id, message.message, 1800);
       if (message.toy === "late") incoming = null;
+      if (pinching && message.toy !== "late") pinching = null;
       return;
     }
     if (message.t !== "toys") return;
     applyView(message);
-    if (message.letter && typeof message.letter.text === "string") {
-      letters.push({ from: String(message.letter.from || ""), name: String(message.letter.name || ""), text: message.letter.text, at: Date.now() });
-      if (letters.length > 5) letters.shift();
-    }
     if (message.fx && typeof message.fx.kind === "string") play(message.fx);
   }
 
   return {
     onNet,
     interact,
+    key,
     walk,
     openNearest,
     drop,
@@ -1090,17 +1526,20 @@ export function attachToys(env) {
     guard,
     release: stopPinch,
     holding,
+    bump: () => bumpOn(closeBy()),
     view() {
       return {
         toys: Object.fromEntries([...places].map(([id, place]) => [id, { ...place }])),
         combo,
         incoming: Boolean(incoming),
         catchable: Boolean(incoming) && performance.now() >= incoming.open,
-        letters: letters.map((letter) => ({ ...letter })),
         pinching: Boolean(pinching),
+        near: closeBy()?.id || "",
+        messy: messy(),
         flights: flights.length,
         particles: particles.length,
         placed: placed.map((node) => node.userData.toy),
+        items: ITEMS.map((item) => item.id),
       };
     },
     fxLog() {
@@ -1110,7 +1549,7 @@ export function attachToys(env) {
       const actor = world.actor?.(id);
       if (!actor?.userData?.rig) return null;
       const fx = effects.get(id);
-      return { x: actor.userData.rig.scale.x, y: actor.userData.rig.scale.y, low: fx?.low ?? 1, busy: Boolean(fx?.squash) };
+      return { x: actor.userData.rig.scale.x, y: actor.userData.rig.scale.y, low: fx?.low ?? 1, small: fx?.small ?? 1, busy: Boolean(fx?.squash || fx?.tiny) };
     },
     heldProp(id) {
       const pose = held.get(id);
