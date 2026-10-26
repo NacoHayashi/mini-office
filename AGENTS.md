@@ -16,13 +16,14 @@
 - `scripts/build.mjs`：由 `games/` 產生 `public/games/index.html`（產物，不要手改）。
 - `scripts/bundle-office.mjs`、`scripts/office-*.mjs`：打包辦公室用的 three.js 擴充到 `public/office/vendor/`。
 - `src/index.ts`：Worker 進入點與路由分派。
-- `src/office-room.ts`：辦公室 Durable Object（登入、在線、WebSocket、擺設、分數）。
+- `src/office-room.ts`：辦公室 Durable Object 進入點（請求分派、WebSocket、移動、聊天、外觀）。
+- `src/room-*.ts`：辦公室 Durable Object 依功能分開的部分：`room-base`（共用狀態與儲存）、`room-login`（登入、配對、訪客）、`room-admin`（管理頁）、`room-scores`（分數）、`room-seats`（椅子）、`room-toys`（玩具、碰撞）、`room-snacks`（零食、廁所）、`room-whisper`（悄悄話）、`room-furniture`（擺設編輯）。
 - `src/content.ts`：地圖、角色造型、家具定義與輸入正規化。
 - `src/migrations.ts`：資料表結構、版本遷移、備份與還原。
 - `src/snacks.ts`：零食櫃與販賣機庫存。
 - `src/pairing.ts`、`src/admin-session.ts`、`src/crypto.ts`、`src/http.ts`：裝置配對、管理員工作階段、共用工具。
-- `public/office/game.js`：辦公室前端主程式（狀態、輸入、UI、連線）。
-- `public/office/world3d.js`：3D 場景、鏡頭。
+- `public/office/game.js`：辦公室前端進入點（畫面迴圈、版面、啟動）；同目錄依功能分檔：`office-state.js`（共用狀態）、`net.js`（連線）、`login.js`、`movement.js`、`input.js`、`interact.js`、`edit-mode.js`、`whisper.js`、`people.js`、`chat.js`、`actions.js`、`arcade.js`、`look-editor.js`、`debug.js`。
+- `public/office/world3d.js`：3D 場景主體與繪製；`world-*.js` 分別是材質、房間、家具、角色、名牌、預覽、鏡頭。
 - `public/office/avatar.js`：角色外型、配件與動作。
 - `public/office/furnish.js`：載入 Kenney GLB 家具。
 - `public/office/toon.js`：卡通材質與家具描邊。
