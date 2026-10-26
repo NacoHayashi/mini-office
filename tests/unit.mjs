@@ -8,6 +8,25 @@ import test from "node:test";
 import vm from "node:vm";
 import esbuild from "esbuild";
 
+// The room server, the office client, and the 3D scene are each split across
+// several files by feature; source checks read each group back as one text.
+function readSources(files) {
+  return files.map((file) => readFileSync(join(import.meta.dirname, "..", file), "utf8")).join("\n");
+}
+const ROOM_FILES = ["base", "login", "admin", "scores", "seats", "toys", "snacks", "whisper", "furniture"]
+  .map((name) => `src/room-${name}.ts`)
+  .concat("src/office-room.ts");
+const CLIENT_FILES = [
+  "office-state", "net", "login", "movement", "input", "interact", "edit-mode", "whisper",
+  "people", "chat", "actions", "arcade", "look-editor", "debug", "game",
+].map((name) => `public/office/${name}.js`);
+const WORLD_FILES = readdirSync(join(import.meta.dirname, "../public/office"))
+  .filter((file) => file.startsWith("world") && file.endsWith(".js"))
+  .map((file) => `public/office/${file}`);
+const roomSource = () => readSources(ROOM_FILES);
+const clientSource = () => readSources(CLIENT_FILES);
+const worldSource = () => readSources(WORLD_FILES);
+
 const outdir = mkdtempSync(join(tmpdir(), "office-unit-"));
 const outfile = join(outdir, "content.mjs");
 await esbuild.build({
@@ -596,7 +615,7 @@ test("admin sessions are added by the following migration, swept when expired, a
   sql.exec(`INSERT INTO admin_sessions (token_hash, created_at, expires_at) VALUES ('fresh', 1, 5000)`);
   sql.exec(`DELETE FROM admin_sessions WHERE expires_at <= ?`, 100);
   assert.equal(sql.exec(`SELECT token_hash FROM admin_sessions`).toArray().map((row) => row.token_hash).join(","), "fresh");
-  const room = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
+  const room = roomSource();
   assert.match(room, /DELETE FROM admin_sessions WHERE expires_at <= \?/);
   const backup = migrations.exportOffice(sql);
   assert.equal(Object.hasOwn(backup, "admin_sessions"), false);
@@ -743,13 +762,13 @@ test("restore clears member and admin sessions and drops live office state", asy
   assert.equal(live.msgHits.size, 0);
   assert.equal(live.furnMoveAt.size, 0);
   assert.equal(live.ready, false);
-  const game = readFileSync(join(import.meta.dirname, "../public/office/game.js"), "utf8");
+  const game = clientSource();
   const bye = game.slice(game.indexOf('message.t === "bye"'), game.indexOf("function send("));
   assert.match(bye, /reason === "elsewhere"/);
   assert.match(bye, /password: "辦公室密碼已更新，請重新輸入。"/);
   assert.match(bye, /restored: "辦公室已還原，請重新輸入。"/);
   assert.match(bye, /showGate\(text\)/);
-  const room = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
+  const room = roomSource();
   assert.match(room, /clearLiveOffice\(/);
   assert.match(room, /goodbye\(ws, "restored"\)/);
   assert.match(room, /restored: 4007/);
@@ -941,7 +960,7 @@ test("held snacks survive a reload from storage and drop unknown items", () => {
   room.load(JSON.stringify({ cookie: 1 }), null);
   assert.equal(room.view().cookie, 1);
   assert.equal(room.hand("momo"), "");
-  const room2 = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
+  const room2 = roomSource();
   assert.match(room2, /reloadMeta: \(\) => \{\s*this\.loadSnacks\(\);\s*this\.toys\.load\(this\.meta\(TOY_META\)\);/);
 });
 
@@ -1086,7 +1105,7 @@ test("toys: pinching needs no toy and is capped by the server", () => {
   assert.equal(again.ok, true);
   assert.equal(room.pinchEnd("b").to, "c");
   // The paper plane is gone, so the server has no letter path left.
-  const source = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
+  const source = roomSource();
   assert.doesNotMatch(source, /plane|letter/i);
   assert.equal("plane" in toys.TOY_COOLDOWN_MS, false);
 });
@@ -1109,7 +1128,7 @@ test("toys: every play toy needs to be in hand, has its own reach and cooldown",
   assert.equal(toys.isPlayToy("ball"), false);
   assert.equal(toys.isPlayToy("ram"), false);
   // The server sends each play toy through the same path; hammer keeps its bonk.
-  const source = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
+  const source = roomSource();
   assert.match(source, /isPlayToy\(toy\)\) \{\s*const result = this\.toys\.play\(me, target, toy, now\);/);
   assert.match(source, /const kind = toy === "hammer" \? "bonk" : toy;/);
 });
@@ -1147,10 +1166,10 @@ test("toys: bumping needs no toy, pushes along a clear path and stays server-sid
   const short = toys.knockSpot(nearWall, -1, 0, clear, toys.BUMP_DISTANCES);
   assert.ok(short && short.x < nearWall.x && content.hitsWall(office.walls, short.x, short.y, content.WALL_RADIUS) === false, JSON.stringify(short));
   // The server moves the person itself and drops their stale moves for a moment.
-  const source = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
+  const source = roomSource();
   assert.match(source, /op === "ram" \? this\.toys\.ram\(me, target, now, find\) : this\.toys\.bump\(me, target, now, find\)/);
   assert.match(source, /far \? BUMP_DISTANCES : KNOCK_DISTANCES/);
-  assert.match(source, /private knockTo\(id: string, spot: \{ x: number; y: number \}, now: number\) \{\s*const hit = this\.socketOf\(id\);\s*if \(!hit\) return;\s*hit\.att\.x = spot\.x;\s*hit\.att\.y = spot\.y;/);
+  assert.match(source, /protected knockTo\(id: string, spot: \{ x: number; y: number \}, now: number\) \{\s*const hit = this\.socketOf\(id\);\s*if \(!hit\) return;\s*hit\.att\.x = spot\.x;\s*hit\.att\.y = spot\.y;/);
 });
 
 test("toys: Lala puts floor toys and toys of people who left back on the rack", () => {
@@ -1162,7 +1181,7 @@ test("toys: Lala puts floor toys and toys of people who left back on the rack", 
   assert.equal(room.hand("b"), "");
   assert.equal(room.hand("c"), "frisbee", "people still here keep their toy");
   assert.deepEqual(room.tidy(() => true), []);
-  const source = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
+  const source = roomSource();
   assert.match(source, /if \(op === "tidy"\) \{\s*if \(Math\.hypot\(att\.x - this\.map\.lala\.x, att\.y - this\.map\.lala\.y\) > LALA_REACH\)/);
   const client = readFileSync(join(import.meta.dirname, "../public/office/toys.js"), "utf8");
   assert.match(client, /send\(\{ t: "toy", op: "tidy" \}\)/);
@@ -1271,7 +1290,7 @@ test("toys: the rack is fixed furniture in the game room and the client lists ev
   assert.ok(rack.x >= zone.x * 32 && rack.x + size.w <= (zone.x + zone.w) * 32 && rack.y >= zone.y * 32 && rack.y + size.h <= (zone.y + zone.h) * 32);
   assert.equal(content.furnitureFits(office.walls, rack.kind, rack.x, rack.y, rack.rot), true);
   for (const prop of office.props.filter((item) => item.solid)) assert.equal(overlap({ x: rack.x, y: rack.y, w: size.w, h: size.h }, prop), false, prop.kind);
-  const source = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
+  const source = roomSource();
   assert.match(source, /isFixedId\(id\) \|\| id === TOY_RACK_ID/);
   assert.match(source, /isFixedKind\(kind\) \|\| kind === "toyrack"/);
   const client = readFileSync(join(import.meta.dirname, "../public/office/toys.js"), "utf8");
@@ -1306,8 +1325,8 @@ test("emergency reset spots avoid solid furniture and props", () => {
   assert.equal(content.hitsSolid(props, furniture, 316, 13, 10), false);
   assert.equal(content.hitsSolid(props, furniture, 408, 10, 10), false);
   assert.equal(content.hitsSolid(props, [{ kind: "coffeetable", x: 200, y: 0, rot: 90 }], 235, 60, 4), true);
-  const room = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
-  const reset = room.slice(room.indexOf("private onReset("), room.indexOf("private onRise("));
+  const room = roomSource();
+  const reset = room.slice(room.indexOf("protected onReset("), room.indexOf("protected onRise("));
   assert.match(reset, /RESET_COOLDOWN_MS/);
   assert.match(reset, /UPDATE furniture SET x = \?, y = \?, rot = \? WHERE id = \?/);
   assert.match(reset, /separateFrom\(att\.id, base\.x, base\.y, att\.look, true\)/);
@@ -1381,7 +1400,7 @@ test("sofa table can move like other furniture while snack machines stay fixed",
     assert.equal(overlap(home, spot), false, machine);
   }
   const page = readFileSync(join(import.meta.dirname, "../public/index.html"), "utf8");
-  const client = readFileSync(join(import.meta.dirname, "../public/office/game.js"), "utf8");
+  const client = clientSource();
   assert.match(page, /id="unstuck-btn"[^>]*aria-label="緊急急救"[^>]*>.*<span class="label">緊急急救<\/span><\/button>/);
   assert.match(client, /t: "reset"/);
   assert.match(client, /已回到安全位置/);
@@ -1507,7 +1526,7 @@ test("each restroom is one room with two stalls, toilets and doors", () => {
   assert.equal(room.blocks(closedCenter.x, closedCenter.y, 11), true);
   assert.equal(room.blocks(openCenter.x, openCenter.y, 11), false);
   assert.equal(stalls.STALL_COOLDOWN_MS, 300);
-  const officeRoom = readFileSync(join(import.meta.dirname, "../src/office-room.ts"), "utf8");
+  const officeRoom = roomSource();
   assert.match(officeRoom, /STALL_COOLDOWN_MS/);
   assert.match(officeRoom, /this\.stalls\.load\(this\.meta\(STALL_META\)\)/);
   assert.match(officeRoom, /setMeta\(STALL_META, this\.stalls\.save\(\)\)/);
@@ -1565,7 +1584,7 @@ test("stall doors survive a save and load round trip", () => {
 });
 
 test("holding a snack at a stall door, E toggles the door instead of eating", () => {
-  const game = readFileSync(join(import.meta.dirname, "../public/office/game.js"), "utf8");
+  const game = clientSource();
   const bite = game.match(/const blockBite = ([^;]+);/);
   assert.ok(bite, "找不到 blockBite");
   assert.match(bite[1], /stalls\.nearest\(\)/);
@@ -1613,7 +1632,7 @@ test("each restroom has one sink along the wall, with a mirror above it", () => 
     assert.ok(sinks.every((sink) => cx < sink.x || cx > sink.x + sink.w || cy < sink.y || cy > sink.y + sink.h), `${tx},${ty}`);
   }
   const furnish = readFileSync(join(import.meta.dirname, "../public/office/furnish.js"), "utf8");
-  const world = readFileSync(join(import.meta.dirname, "../public/office/world3d.js"), "utf8");
+  const world = worldSource();
   for (const name of ["bath-sink", "bath-mirror"]) {
     assert.match(furnish, new RegExp(`"${name}"`));
     assert.match(world, new RegExp(`"${name}"`));
@@ -1701,7 +1720,7 @@ test("the pantry coffee machine and water cooler move off the new counter only i
 
 test("snack cabinet keeps its body and the drinks machine can use the Kenney vending model", () => {
   const furnish = readFileSync(join(import.meta.dirname, "../public/office/furnish.js"), "utf8");
-  const world = readFileSync(join(import.meta.dirname, "../public/office/world3d.js"), "utf8");
+  const world = worldSource();
   const license = readFileSync(join(import.meta.dirname, "../public/office/assets/kenney/LICENSE.txt"), "utf8");
   for (const name of ["vending-machine", "plate", "cookie", "cupcake", "cup-tea", "donut"]) {
     assert.match(furnish, new RegExp(`"${name}"`));
