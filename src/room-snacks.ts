@@ -1,5 +1,5 @@
 // The snack machine and the restroom stalls.
-import { furnitureSize, WALL_RADIUS } from "./content";
+import { bodyRadiusOf, furnitureSize, WALL_RADIUS } from "./content";
 import { HANDS_META, MACHINE_ID, SNACK_META, type SnackMachine } from "./snacks";
 import { STALL_COOLDOWN_MS, STALL_META } from "./stalls";
 import { type Att } from "./room-base";
@@ -12,10 +12,10 @@ export abstract class RoomSnacks extends RoomToys {
     att.lastStall = now;
     ws.serializeAttachment(att);
     const id = typeof body.id === "string" ? body.id : "";
-    const bodies: Array<{ x: number; y: number }> = [];
+    const bodies: Array<{ x: number; y: number; r: number }> = [];
     for (const socket of this.ctx.getWebSockets()) {
       const other = socket.deserializeAttachment() as Att | null;
-      if (other && !other.seat) bodies.push({ x: other.x, y: other.y });
+      if (other && !other.seat) bodies.push({ x: other.x, y: other.y, r: bodyRadiusOf(other.look) });
     }
     const result = this.stalls.toggle(id, att.x, att.y, bodies, WALL_RADIUS);
     if (!result.ok) {

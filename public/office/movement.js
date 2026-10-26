@@ -23,7 +23,7 @@ export function zoneAt(x, y) {
 
 export function inRestroom() {
   const zone = zoneAt(state.me.x, state.me.y);
-  return zone?.id === "men" || zone?.id === "women";
+  return zone?.id === "restroom";
 }
 
 export function nearLala() {
@@ -70,7 +70,10 @@ export function sizeOf(item) {
   return { w: spec.w, h: spec.h, solid: spec.solid };
 }
 
-export function collides(x, y, ignoreId, radius = 11) {
+// Stall walls, doors and toilets keep the whole body out, so nobody pokes through a closed stall.
+const STALL_KINDS = new Set(["stallwall", "stalldoor", "toilet"]);
+
+export function collides(x, y, ignoreId, radius = 11, stallRadius = radius) {
   const minX = Math.floor((x - radius) / TILE);
   const maxX = Math.floor((x + radius) / TILE);
   const minY = Math.floor((y - radius) / TILE);
@@ -83,7 +86,8 @@ export function collides(x, y, ignoreId, radius = 11) {
   for (const prop of state.map?.props || []) {
     if (!prop.solid) continue;
     const box = prop.kind === "stalldoor" ? stalls.box(prop) : prop;
-    if (circleRect(x, y, radius, box.x, box.y, box.w, box.h)) return true;
+    const reach = STALL_KINDS.has(prop.kind) ? stallRadius : radius;
+    if (circleRect(x, y, reach, box.x, box.y, box.w, box.h)) return true;
   }
   for (const item of state.furniture) {
     if (item.id === ignoreId) continue;
@@ -99,7 +103,13 @@ function bodyList() {
   const lala = state.map?.lala;
   if (lala) list.push({ id: "lala", x: lala.x, y: lala.y, r: bodyRadius({ body: "bean" }) });
   for (const person of state.others.values()) {
-    list.push({ id: person.id, x: person.x, y: person.y, r: bodyRadius(person.look) });
+    const r = bodyRadius(person.look);
+    list.push({ id: person.id, x: person.x, y: person.y, r });
+    // Coworkers are drawn a little in the past. Also keep clear of where they really are now,
+    // or two people walking at each other each stop against the other's old spot and overlap.
+    const tx = person.tx ?? person.x;
+    const ty = person.ty ?? person.y;
+    if (Math.hypot(tx - person.x, ty - person.y) > 0.5) list.push({ id: person.id, x: tx, y: ty, r });
   }
   return list;
 }
@@ -144,24 +154,33 @@ export function noteBump(hit, bounce) {
   }
 }
 
-function wallSlide(ox, oy, dx, dy, radius = wallRadius()) {
+// The whole body against stall parts, unless it already overlaps one (say, after a new
+// look); then the wall radius lets it walk free. The server makes the same call.
+function stallFit(x, y, radius) {
+  const wall = wallRadius();
+  return collides(x, y, null, 0, radius) ? wall : radius;
+}
+
+function wallSlide(ox, oy, dx, dy, radius = wallRadius(), stallRadius = radius) {
   let x = ox + dx;
   let y = oy + dy;
-  if (collides(x, oy, null, radius)) x = ox;
-  if (collides(x, y, null, radius)) y = oy;
+  if (collides(x, oy, null, radius, stallRadius)) x = ox;
+  if (collides(x, y, null, radius, stallRadius)) y = oy;
   return { x, y };
 }
 
-function acceptBody(x, y, radius, fallback) {
+function acceptBody(x, y, radius, fallback, stallRadius = wallRadius()) {
+  const wall = wallRadius();
+  const blocked = (px, py) => collides(px, py, null, wall, stallRadius);
   const resolved = resolveBodies(x, y, radius);
-  if (!collides(resolved.x, resolved.y)) return resolved;
-  if (!collides(resolved.x, fallback.y)) {
+  if (!blocked(resolved.x, resolved.y)) return resolved;
+  if (!blocked(resolved.x, fallback.y)) {
     const again = resolveBodies(resolved.x, fallback.y, radius);
-    if (!collides(again.x, again.y)) return again;
+    if (!blocked(again.x, again.y)) return again;
   }
-  if (!collides(fallback.x, resolved.y)) {
+  if (!blocked(fallback.x, resolved.y)) {
     const again = resolveBodies(fallback.x, resolved.y, radius);
-    if (!collides(again.x, again.y)) return again;
+    if (!blocked(again.x, again.y)) return again;
   }
   return { x: fallback.x, y: fallback.y, hit: resolved.hit };
 }
@@ -170,8 +189,9 @@ export function tryMove(dx, dy) {
   const beforeX = state.me.x;
   const beforeY = state.me.y;
   const radius = bodyRadius(state.me.look);
-  const direct = wallSlide(beforeX, beforeY, dx, dy);
-  let resolved = acceptBody(direct.x, direct.y, radius, { x: beforeX, y: beforeY });
+  const fit = stallFit(beforeX, beforeY, radius);
+  const direct = wallSlide(beforeX, beforeY, dx, dy, wallRadius(), fit);
+  let resolved = acceptBody(direct.x, direct.y, radius, { x: beforeX, y: beforeY }, fit);
   const want = Math.hypot(dx, dy);
   const got = Math.hypot(resolved.x - beforeX, resolved.y - beforeY);
   if (resolved.hit && want > 0.01 && got < want * 0.45) {
@@ -180,8 +200,8 @@ export function tryMove(dx, dy) {
     let tx = -ny;
     let ty = nx;
     if (tx * dx + ty * dy < 0) { tx = -tx; ty = -ty; }
-    const slide = wallSlide(beforeX, beforeY, tx * want, ty * want);
-    const slid = acceptBody(slide.x, slide.y, radius, { x: beforeX, y: beforeY });
+    const slide = wallSlide(beforeX, beforeY, tx * want, ty * want, wallRadius(), fit);
+    const slid = acceptBody(slide.x, slide.y, radius, { x: beforeX, y: beforeY }, fit);
     if (Math.hypot(slid.x - beforeX, slid.y - beforeY) > got) resolved = slid;
   }
   state.me.x = resolved.x;
@@ -195,7 +215,7 @@ export function tryMove(dx, dy) {
 
 export function freeSpot(x, y) {
   const radius = bodyRadius(state.me?.look);
-  const open = (px, py) => !collides(px, py) && Math.hypot(resolveBodies(px, py, radius).x - px, resolveBodies(px, py, radius).y - py) < 0.8;
+  const open = (px, py) => !collides(px, py, null, wallRadius(), radius) && Math.hypot(resolveBodies(px, py, radius).x - px, resolveBodies(px, py, radius).y - py) < 0.8;
   if (open(x, y)) return { x, y };
   for (let ring = 1; ring <= 6; ring++) {
     const step = ring * 26;
@@ -217,6 +237,8 @@ function tileBlocked(tx, ty) {
     if (!prop.solid) continue;
     const box = prop.kind === "stalldoor" ? stalls.box(prop) : prop;
     if (cx >= box.x && cx <= box.x + box.w && cy >= box.y && cy <= box.y + box.h) return true;
+    // Stall walls and doors are thin and keep the whole body out, so plan around them by body size.
+    if (STALL_KINDS.has(prop.kind) && circleRect(cx, cy, bodyRadius(state.me?.look), box.x, box.y, box.w, box.h)) return true;
   }
   for (const item of state.furniture) {
     const size = sizeOf(item);

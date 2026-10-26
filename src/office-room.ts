@@ -1,5 +1,6 @@
 import {
   avatarAnimal,
+  bodyRadiusOf,
   catalog,
   isRestroom,
   normalizeChat,
@@ -237,7 +238,7 @@ export class OfficeRoom extends RoomFurniture implements DurableObject {
     const body = requestBody(raw);
     if (kind === "setup") {
       if (!("setup" in held)) {
-        this.send(ws, reply(rid, { status: 403, data: { error: "請到男廁或女廁更換造型" } }));
+        this.send(ws, reply(rid, { status: 403, data: { error: "請到廁所更換造型" } }));
         return;
       }
       const outcome = this.firstLook(member, body);
@@ -267,7 +268,11 @@ export class OfficeRoom extends RoomFurniture implements DurableObject {
     // Moves sent before a knockback reached this player still start from the old spot; drop them quietly.
     if (att.knockAt && now - att.knockAt < 600 && Math.hypot(x - att.x, y - att.y) > 40) return;
     const dt = Math.min(2, Math.max(0.04, att.lastMove ? (now - att.lastMove) / 1000 : 0.04));
-    if (Math.hypot(x - att.x, y - att.y) > 340 * dt + 28 || this.inWall(x, y) || this.stalls.blocks(x, y, WALL_RADIUS)) {
+    // Stall walls, doors and toilets keep the whole body out, so nobody pokes through a
+    // closed stall. Someone already overlapping one (say, after a new look) can still walk free.
+    const fit = bodyRadiusOf(att.look);
+    const stallRadius = this.stalls.blocks(att.x, att.y, fit) ? WALL_RADIUS : fit;
+    if (Math.hypot(x - att.x, y - att.y) > 340 * dt + 28 || this.inWall(x, y) || this.stalls.blocks(x, y, stallRadius)) {
       this.rejectMove(ws, att);
       return;
     }
@@ -331,7 +336,7 @@ export class OfficeRoom extends RoomFurniture implements DurableObject {
     let look = att.look;
     if (body.animal !== undefined || body.look !== undefined) {
       if (!isRestroom(att.x, att.y, this.map.zones)) {
-        this.send(ws, { t: "error", message: "請到男廁或女廁更換造型" });
+        this.send(ws, { t: "error", message: "請到廁所更換造型" });
         return;
       }
       const next = incomingLook(body, att.animal);

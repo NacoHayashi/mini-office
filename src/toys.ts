@@ -30,7 +30,7 @@ export const KNOCK_DISTANCES = [64, 52, 40, 28] as const;
 export const BUMP_DISTANCES = [88, 72, 56, 40, 28, 16] as const;
 export const KNOCK_STEP = 6;
 
-export const TOY_IDS = ["hammer", "ball", "pillow", "bubble", "water", "popper", "horn", "frisbee", "wand", "blower", "ram"] as const;
+export const TOY_IDS = ["hammer", "ball", "pillow", "bubble", "water", "wand", "ram"] as const;
 export type ToyId = (typeof TOY_IDS)[number];
 
 export const TOY_ITEMS: ReadonlyArray<{ id: ToyId; label: string }> = [
@@ -39,11 +39,7 @@ export const TOY_ITEMS: ReadonlyArray<{ id: ToyId; label: string }> = [
   { id: "pillow", label: "枕頭" },
   { id: "bubble", label: "泡泡槍" },
   { id: "water", label: "大水槍" },
-  { id: "popper", label: "拉炮" },
-  { id: "horn", label: "玩具喇叭" },
-  { id: "frisbee", label: "飛盤" },
   { id: "wand", label: "魔法棒" },
-  { id: "blower", label: "吹龍" },
   { id: "ram", label: "撞撞車" },
 ];
 
@@ -53,27 +49,19 @@ export const TOY_COOLDOWN_MS: Record<ToyId, number> = {
   pillow: 900,
   bubble: 1800,
   water: 1500,
-  popper: 3000,
-  horn: 1200,
-  frisbee: 2000,
   wand: 2500,
-  blower: 1200,
   ram: 3000,
 };
 
 /** Toys used straight on a coworker in reach. Touch toys reach past bodies; the rest have a fixed range. */
-export const PLAY_TOYS = ["hammer", "pillow", "bubble", "water", "popper", "horn", "frisbee", "wand", "blower"] as const;
+export const PLAY_TOYS = ["hammer", "pillow", "bubble", "water", "wand"] as const;
 export type PlayToy = (typeof PLAY_TOYS)[number];
 export const TOY_RANGE: Record<PlayToy, number | null> = {
   hammer: null,
   pillow: null,
-  blower: null,
-  horn: 150,
-  popper: 150,
   bubble: 260,
   wand: 260,
   water: 300,
-  frisbee: 320,
 };
 
 /** Things anyone can do to a coworker close by, no toy needed. */

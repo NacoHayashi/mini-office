@@ -618,7 +618,8 @@ export function createWorld({ view, preview, labels, fallback }) {
     if (!open || doorPivots.size === 0) return;
     const step = 1 - Math.exp(-8 * Math.max(0.001, dt || 0.016));
     for (const [id, pivot] of doorPivots) {
-      const target = open.get(id) ? Math.PI / 2 : 0;
+      // Stall doors swing into the stall, along the west partition.
+      const target = open.get(id) ? -Math.PI / 2 : 0;
       pivot.rotation.y += (target - pivot.rotation.y) * step;
     }
   }
