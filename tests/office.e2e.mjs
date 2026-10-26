@@ -19,6 +19,8 @@ const saved = [];
 // walkthrough, "phone" the phone office and the toy room. No --shard runs both.
 const SHARD = process.argv.find((arg) => arg.startsWith("--shard="))?.slice("--shard=".length) || "";
 if (SHARD && SHARD !== "desk" && SHARD !== "phone") throw new Error(`未知的 --shard=${SHARD}，只能是 desk 或 phone`);
+const CORE_PART = Number(process.argv.find((arg) => arg.startsWith("--part="))?.slice("--part=".length) || 0);
+if (![0, 1, 2, 3].includes(CORE_PART)) throw new Error(`未知的 --part=${CORE_PART}，只能是 1、2 或 3`);
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -2299,7 +2301,11 @@ async function restrooms(browser) {
   assert(shut.gap === true, "關門後門口應該擋住");
   assert(shut.leaf === false, "關上的門不該擋在外面");
 
-  await march(witness, 640, 336);
+  // The witness has nothing left to check. Close it now: an idle second page still draws the
+  // whole 3D office, which halves the frame rate on a software-rendering runner and makes every
+  // remaining walk through the rooms take twice as long.
+  await witness.close();
+  await witnessContext.close();
   const cabinet = await page.evaluate(() => window.office.snackSpot("snackcab"));
   await march(page, 128, 336);
   await march(page, 1088, 336);
@@ -2352,8 +2358,6 @@ async function restrooms(browser) {
   await page.waitForFunction(() => window.office.zone === "茶水間");
   await settleView(page);
   await shot(page, "pantry");
-  await witness.close();
-  await witnessContext.close();
   await page.close();
   await context.close();
 
@@ -3121,20 +3125,19 @@ async function main() {
       return;
     }
     if (process.argv.includes("--core")) {
-      await snackLounge(browser);
-      await toyRoom(browser);
-      await removedDeviceCanRegister(browser);
-      await chatModeAndCamera(browser);
-      await phoneCamera(browser);
-      await seatedCamera(browser);
-      publishShots();
-      await coreOffice(browser);
-      await guestOffice(browser);
-      await chairHome(browser);
-      await restrooms(browser);
-      await sofaAndUnstuck(browser);
-      await reviewFixes(browser);
-      publishShots();
+      // CI runs the three parts side by side (--part=1, 2, 3), each on its own server;
+      // without --part they all run here in order. Each part keeps the original order.
+      const parts = [
+        [snackLounge, toyRoom, removedDeviceCanRegister, phoneCamera, coreOffice],
+        [chatModeAndCamera, seatedCamera, guestOffice, chairHome, sofaAndUnstuck, reviewFixes],
+        [restrooms],
+      ];
+      const steps = CORE_PART ? parts[CORE_PART - 1] : parts.flat();
+      try {
+        for (const step of steps) await step(browser);
+      } finally {
+        publishShots();
+      }
       console.log("e2e ok");
       return;
     }

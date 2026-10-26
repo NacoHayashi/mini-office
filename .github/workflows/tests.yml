@@ -25,9 +25,21 @@ jobs:
       - run: npm run build
       - run: git diff --exit-code -- public/games/index.html games/bbq.html
 
+  # The core checks are split into three parts that run side by side; one runner
+  # draws the 3D office in software and needs about 20 minutes for all of them.
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # Chromium and its system libraries come preinstalled in this image, so no job waits on
+    # an apt mirror. Keep the tag in step with the playwright version in package-lock.json.
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
+      options: --ipc=host
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3]
+    name: e2e (${{ matrix.part }})
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,8 +47,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e:ci
+      - run: npm run test:e2e:ci -- --part=${{ matrix.part }}
         env:
           CI: "1"
 
@@ -48,6 +59,9 @@ jobs:
       matrix:
         shard: [desk, phone]
     name: e2e-full (${{ matrix.shard }})
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
+      options: --ipc=host
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -55,7 +69,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e -- --shard=${{ matrix.shard }}
         env:
           CI: "1"
@@ -63,6 +76,9 @@ jobs:
   lobby:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
+      options: --ipc=host
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -70,5 +86,4 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
       - run: node tests/lobby.e2e.mjs
