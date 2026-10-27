@@ -1111,7 +1111,7 @@ test("toys: pinching needs no toy and is capped by the server", () => {
 });
 
 test("toys: every play toy needs to be in hand, has its own reach and cooldown", () => {
-  assert.equal(toys.TOY_IDS.length, 11);
+  assert.deepEqual(toys.TOY_IDS, ["hammer", "ball", "pillow", "bubble", "water", "wand", "ram"]);
   assert.equal(toys.TOY_IDS.length, new Set(toys.TOY_IDS).size);
   const t0 = 50_000;
   for (const toy of toys.PLAY_TOYS) {
@@ -1127,6 +1127,10 @@ test("toys: every play toy needs to be in hand, has its own reach and cooldown",
   }
   assert.equal(toys.isPlayToy("ball"), false);
   assert.equal(toys.isPlayToy("ram"), false);
+  for (const gone of ["popper", "horn", "frisbee", "blower"]) {
+    assert.equal(toys.isPlayToy(gone), false, gone);
+    assert.equal(toys.isToy(gone), false, gone);
+  }
   // The server sends each play toy through the same path; hammer keeps its bonk.
   const source = roomSource();
   assert.match(source, /isPlayToy\(toy\)\) \{\s*const result = this\.toys\.play\(me, target, toy, now\);/);
@@ -1173,13 +1177,13 @@ test("toys: bumping needs no toy, pushes along a clear path and stays server-sid
 });
 
 test("toys: Lala puts floor toys and toys of people who left back on the rack", () => {
-  const room = toyRoomWith({ a: "hammer", b: "wand", c: "frisbee" });
+  const room = toyRoomWith({ a: "hammer", b: "wand", c: "water" });
   room.drop("a", 300, 300);
   const moved = room.tidy((id) => id === "c");
   assert.deepEqual(moved.sort(), ["hammer", "wand"]);
   assert.equal(room.where("hammer").at, "rack");
   assert.equal(room.hand("b"), "");
-  assert.equal(room.hand("c"), "frisbee", "people still here keep their toy");
+  assert.equal(room.hand("c"), "water", "people still here keep their toy");
   assert.deepEqual(room.tidy(() => true), []);
   const source = roomSource();
   assert.match(source, /if \(op === "tidy"\) \{\s*if \(Math\.hypot\(att\.x - this\.map\.lala\.x, att\.y - this\.map\.lala\.y\) > LALA_REACH\)/);
@@ -1309,6 +1313,12 @@ test("toys: the rack is fixed furniture in the game room and the client lists ev
     assert.doesNotMatch(license, new RegExp(`${name}\\.glb`), name);
   }
   assert.doesNotMatch(client, /paper ?plane|紙飛機|letter/i);
+  // The rack keeps six toys plus the bumper car; the popper, horn, frisbee and blower are gone everywhere.
+  assert.doesNotMatch(client, /popper|horn|frisbee|blower|拉炮|喇叭|飛盤|吹龍/);
+  const help = readFileSync(join(import.meta.dirname, "../public/index.html"), "utf8");
+  assert.doesNotMatch(help, /拉炮|玩具喇叭|飛盤|吹龍/);
+  assert.match(help, /嗶嗶槌、沙灘球、枕頭、泡泡槍、大水槍和魔法棒/);
+  assert.match(help, /撞撞車/);
 });
 
 test("emergency reset spots avoid solid furniture and props", () => {
@@ -1488,40 +1498,54 @@ test("only the old right sofa turns to face the coffee table", async () => {
   db.close();
 });
 
-test("each restroom is one room with two stalls, toilets and doors", () => {
+test("the restroom is one room with two stalls, toilets and doors", () => {
   const office = content.buildOffice();
   const props = office.props;
+  assert.deepEqual(office.zones.filter((item) => /restroom|^men$|^women$/.test(item.id)).map((item) => item.id), ["restroom"]);
+  const zone = office.zones.find((item) => item.id === "restroom");
+  assert.equal(zone.name, "廁所");
+  const box = { x: zone.x * 32, y: zone.y * 32, w: zone.w * 32, h: zone.h * 32 };
+  // The rooms next door keep their place and size.
+  const keep = { gym: [13, 25, 7, 8], pantry: [21, 25, 8, 8], sofa: [30, 25, 9, 8], office: [1, 12, 38, 12] };
+  for (const [id, want] of Object.entries(keep)) {
+    const other = office.zones.find((item) => item.id === id);
+    assert.deepEqual([other.x, other.y, other.w, other.h], want, id);
+  }
+  // No wall left inside the room, and exactly one two-tile doorway from the office.
+  for (let ty = zone.y; ty < zone.y + zone.h; ty++) {
+    for (let tx = zone.x; tx < zone.x + zone.w; tx++) assert.equal(office.walls[ty][tx], "0", `${tx},${ty}`);
+  }
+  const doorway = [];
+  for (let tx = zone.x; tx < zone.x + zone.w; tx++) if (office.walls[zone.y - 1][tx] === "0") doorway.push(tx);
+  assert.deepEqual(doorway, [6, 7]);
   const toilets = props.filter((item) => item.kind === "toilet");
-  assert.equal(toilets.filter((item) => item.room === "men").length, 2);
-  assert.equal(toilets.filter((item) => item.room === "women").length, 2);
+  assert.equal(toilets.length, 2);
   assert.equal(props.filter((item) => item.kind === "urinal").length, 0);
-  for (const id of ["men", "women"]) {
-    const zone = office.zones.find((item) => item.id === id);
-    const box = { x: zone.x * 32, y: zone.y * 32, w: zone.w * 32, h: zone.h * 32 };
-    for (const part of props.filter((item) => item.room === id)) {
-      assert.ok(part.x >= box.x && part.x + part.w <= box.x + box.w && part.y >= box.y && part.y + part.h <= box.y + box.h, part.id || part.kind);
-    }
+  const parts = props.filter((item) => ["stallwall", "stalldoor", "toilet"].includes(item.kind));
+  for (const part of parts) {
+    assert.ok(part.x >= box.x && part.x + part.w <= box.x + box.w && part.y >= box.y && part.y + part.h <= box.y + box.h, part.id);
   }
   const doors = props.filter((item) => item.kind === "stalldoor").map((item) => item.id).sort();
-  assert.deepEqual(doors, ["men-a", "men-b", "women-a", "women-b"]);
+  assert.deepEqual(doors, ["stall-a", "stall-b"]);
+  assert.equal(props.filter((item) => item.kind === "stallwall").length, 3, "the middle partition is shared");
   const hall = office.zones.find((item) => item.id === "hall");
   const hallBox = { x: hall.x * 32, y: hall.y * 32, w: hall.w * 32, h: hall.h * 32 };
-  for (const prop of props) {
-    if (!["stallwall", "stalldoor", "toilet"].includes(prop.kind)) continue;
-    assert.equal(overlap(prop, hallBox), false, prop.id);
-  }
+  for (const prop of parts) assert.equal(overlap(prop, hallBox), false, prop.id);
   const room = new stalls.StallDoors();
-  assert.equal(room.toggle("men-a", 0, 0).ok, false);
+  assert.equal(room.toggle("stall-a", 0, 0).ok, false);
   assert.equal(room.toggle("nope", 96, 940).reason, "unknown");
-  const door = props.find((item) => item.id === "men-a");
-  const opened = room.toggle("men-a", door.x + door.w / 2, door.y - 30);
+  const door = props.find((item) => item.id === "stall-a");
+  const opened = room.toggle("stall-a", door.x + door.w / 2, door.y - 30);
   assert.equal(opened.ok, true);
   assert.equal(opened.open, true);
   const closedCenter = { x: door.x + door.w / 2, y: door.y + door.h / 2 };
-  const openCenter = { x: door.openX + door.openW / 2, y: door.openY + door.openH / 2 };
+  // Just off the open leaf, which lies against the partition.
+  const openCenter = { x: door.openX + door.openW + 8, y: door.openY + door.openH / 2 };
+  // The door swings in along the stall's west partition, not out into the walkway.
+  assert.ok(door.openY >= door.y + door.h && door.openX === door.x, JSON.stringify(door));
   assert.equal(room.blocks(closedCenter.x, closedCenter.y, 11), false);
   assert.equal(room.blocks(openCenter.x, openCenter.y, 11), true);
-  const shut = room.toggle("men-a", door.x + door.w / 2, door.y - 30);
+  const shut = room.toggle("stall-a", door.x + door.w / 2, door.y - 30);
   assert.equal(shut.open, false);
   assert.equal(room.blocks(closedCenter.x, closedCenter.y, 11), true);
   assert.equal(room.blocks(openCenter.x, openCenter.y, 11), false);
@@ -1546,36 +1570,91 @@ test("each restroom is one room with two stalls, toilets and doors", () => {
   assert.match(client, /bath-toilet/);
   assert.doesNotMatch(client, /urinal/);
   assert.match(license, /Bubbly Bathroom/);
+  assert.match(client, new RegExp(`const REACH = ${stalls.STALL_REACH};`));
+});
+
+test("every body fits inside a stall with the door closed and can still reach its door", () => {
+  const office = content.buildOffice();
+  const radii = Object.values(content.BODY_RADIUS);
+  for (const id of ["stall-a", "stall-b"]) {
+    const door = office.props.find((item) => item.id === id);
+    const toilet = office.props.find((item) => item.id === `${id}-toilet`);
+    const walls = office.props.filter((item) => item.kind === "stallwall");
+    const west = walls.find((item) => item.x + item.w === door.x);
+    const east = walls.find((item) => item.x === door.x + door.w);
+    assert.ok(west && east, id);
+    const inside = { left: door.x, right: door.x + door.w, top: door.y + door.h, bottom: 32 * 33 };
+    for (const r of radii) {
+      // Stand in the middle, just behind the closed door: the whole body is inside the stall.
+      const spot = { x: door.x + door.w / 2, y: Math.min(inside.top + r + 1, toilet.y - r - 1) };
+      assert.ok(spot.y - r >= inside.top && spot.y + r <= toilet.y, `${id} r=${r} 跟馬桶和門之間放不下`);
+      assert.ok(spot.x - r >= inside.left && spot.x + r <= inside.right, `${id} r=${r} 太窄`);
+      const room = new stalls.StallDoors();
+      assert.equal(room.blocks(spot.x, spot.y, r), false, `${id} r=${r} 被擋住`);
+      // The door shuts behind them and opens again from inside.
+      const body = { x: spot.x, y: spot.y, r };
+      room.toggle(id, door.x + door.w / 2, door.y - 30);
+      assert.equal(room.isOpen(id), true);
+      assert.deepEqual(room.toggle(id, spot.x, spot.y, [body]), { ok: true, open: false }, `${id} r=${r} 關不上門`);
+      assert.deepEqual(room.toggle(id, spot.x, spot.y, [body]), { ok: true, open: true }, `${id} r=${r} 從裡面打不開`);
+      // Partly in the doorway, the door will not close on them.
+      const inFrame = { x: spot.x, y: door.y + door.h / 2 + r - 4, r };
+      assert.equal(room.toggle(id, spot.x, spot.y, [inFrame]).reason, "busy", `${id} r=${r}`);
+    }
+  }
+  // Server and client both keep the whole body out of stall walls, doors and toilets.
+  const officeRoom = roomSource();
+  assert.match(officeRoom, /const fit = bodyRadiusOf\(att\.look\);\s*const stallRadius = this\.stalls\.blocks\(att\.x, att\.y, fit\) \? WALL_RADIUS : fit;/);
+  assert.match(officeRoom, /this\.stalls\.blocks\(x, y, stallRadius\)/);
+  assert.match(officeRoom, /bodies\.push\(\{ x: other\.x, y: other\.y, r: bodyRadiusOf\(other\.look\) \}\)/);
+  const movement = readFileSync(join(import.meta.dirname, "../public/office/movement.js"), "utf8");
+  assert.match(movement, /const STALL_KINDS = new Set\(\["stallwall", "stalldoor", "toilet"\]\);/);
+  assert.match(movement, /const fit = stallFit\(beforeX, beforeY, radius\);/);
+  const world = worldSource();
+  assert.match(world, /const target = open\.get\(id\) \? -Math\.PI \/ 2 : 0;/);
+});
+
+test("walking into a coworker keeps clear of where they are now, not only where they are drawn", () => {
+  const movement = readFileSync(join(import.meta.dirname, "../public/office/movement.js"), "utf8");
+  const body = movement.slice(movement.indexOf("function bodyList()"), movement.indexOf("export function resolveBodies"));
+  assert.match(body, /list\.push\(\{ id: person\.id, x: person\.x, y: person\.y, r \}\)/);
+  assert.match(body, /const tx = person\.tx \?\? person\.x;/);
+  assert.match(body, /list\.push\(\{ id: person\.id, x: tx, y: ty, r \}\)/);
 });
 
 test("stall doors refuse to swing onto someone standing in the frame", () => {
   const room = new stalls.StallDoors();
-  const door = stalls.stallProps().find((item) => item.id === "men-a");
+  const door = stalls.stallProps().find((item) => item.id === "stall-a");
   const knock = { x: door.x + door.w / 2, y: door.y - 30 };
   const inFrame = { x: door.x + door.w / 2, y: door.y + door.h / 2 };
   const inSwing = { x: door.openX + door.openW / 2, y: door.openY + door.openH / 2 };
-  assert.deepEqual(room.toggle("men-a", knock.x, knock.y, [knock, inSwing], 11), { ok: false, reason: "busy" });
-  assert.equal(room.isOpen("men-a"), false);
-  assert.equal(room.toggle("men-a", knock.x, knock.y, [knock, inFrame], 11).ok, true);
-  assert.equal(room.isOpen("men-a"), true);
-  assert.deepEqual(room.toggle("men-a", knock.x, knock.y, [knock, inFrame], 11), { ok: false, reason: "busy" });
-  assert.equal(room.isOpen("men-a"), true);
+  assert.deepEqual(room.toggle("stall-a", knock.x, knock.y, [knock, inSwing], 11), { ok: false, reason: "busy" });
+  assert.equal(room.isOpen("stall-a"), false);
+  assert.equal(room.toggle("stall-a", knock.x, knock.y, [knock, inFrame], 11).ok, true);
+  assert.equal(room.isOpen("stall-a"), true);
+  assert.deepEqual(room.toggle("stall-a", knock.x, knock.y, [knock, inFrame], 11), { ok: false, reason: "busy" });
+  assert.equal(room.isOpen("stall-a"), true);
   assert.equal(room.blocks(inFrame.x, inFrame.y, 11), false);
-  assert.equal(room.toggle("men-a", knock.x, knock.y, [knock, { x: inFrame.x, y: inFrame.y - 60 }], 11).ok, true);
-  assert.equal(room.isOpen("men-a"), false);
+  assert.equal(room.toggle("stall-a", knock.x, knock.y, [knock, { x: inFrame.x, y: inFrame.y - 60 }], 11).ok, true);
+  assert.equal(room.isOpen("stall-a"), false);
+  // Each stall keeps its own door.
+  assert.equal(room.toggle("stall-b", stalls.stallProps().find((item) => item.id === "stall-b").x + 60, door.y - 30).ok, true);
+  assert.equal(room.isOpen("stall-b"), true);
+  assert.equal(room.isOpen("stall-a"), false);
 });
 
 test("stall doors survive a save and load round trip", () => {
   const room = new stalls.StallDoors();
-  const door = stalls.stallProps().find((item) => item.id === "women-b");
-  room.toggle("women-b", door.x + door.w / 2, door.y - 30);
+  const door = stalls.stallProps().find((item) => item.id === "stall-b");
+  room.toggle("stall-b", door.x + door.w / 2, door.y - 30);
   const saved = room.save();
   const back = new stalls.StallDoors();
   back.load(saved);
   assert.deepEqual(back.view(), room.view());
-  assert.equal(back.isOpen("women-b"), true);
-  back.load(JSON.stringify(["women-b", "nope", 3]));
-  assert.deepEqual(back.view().filter((item) => item.open).map((item) => item.id), ["women-b"]);
+  assert.equal(back.isOpen("stall-b"), true);
+  // Door ids from the old two-restroom layout are simply dropped.
+  back.load(JSON.stringify(["stall-b", "men-a", "women-b", "nope", 3]));
+  assert.deepEqual(back.view().filter((item) => item.open).map((item) => item.id), ["stall-b"]);
   for (const bad of [null, "", "{", "{}", "7"]) {
     back.load(bad);
     assert.equal(back.view().some((item) => item.open), false, String(bad));
@@ -1590,27 +1669,29 @@ test("holding a snack at a stall door, E toggles the door instead of eating", ()
   assert.match(bite[1], /stalls\.nearest\(\)/);
 });
 
-test("each restroom has one sink along the wall, with a mirror above it", () => {
+test("the restroom has two sinks along the wall, each with a mirror above it", () => {
   const office = content.buildOffice();
   const sinks = office.props.filter((item) => item.kind === "sink");
   const mirrors = office.props.filter((item) => item.kind === "mirror");
-  assert.equal(sinks.filter((item) => item.room === "men").length, 1);
-  assert.equal(sinks.filter((item) => item.room === "women").length, 1);
+  assert.equal(sinks.length, 2);
   assert.ok(sinks.every((item) => item.solid));
   assert.equal(mirrors.length, sinks.length);
-  const zones = {
-    men: office.zones.find((item) => item.id === "men"),
-    women: office.zones.find((item) => item.id === "women"),
-  };
-  const stalls = office.props.filter((item) => ["stallwall", "stalldoor", "toilet"].includes(item.kind));
+  const zone = office.zones.find((item) => item.id === "restroom");
+  const box = { x: zone.x * 32, y: zone.y * 32, w: zone.w * 32, h: zone.h * 32 };
+  const parts = office.props.filter((item) => ["stallwall", "stalldoor", "toilet"].includes(item.kind));
+  const doors = office.props.filter((item) => item.kind === "stalldoor");
   for (const sink of sinks) {
-    const zone = zones[sink.room];
-    const box = { x: zone.x * 32, y: zone.y * 32, w: zone.w * 32, h: zone.h * 32 };
     assert.ok(sink.x >= box.x && sink.y >= box.y && sink.x + sink.w <= box.x + box.w && sink.y + sink.h <= box.y + box.h, sink.id);
-    assert.ok(stalls.every((part) => !overlap(sink, part)), `${sink.id} 擋到隔間`);
+    assert.ok(parts.every((part) => !overlap(sink, part)), `${sink.id} 擋到隔間`);
+    // Standing at the mirror is out of reach of every stall door, so E there opens the mirror.
+    const front = { x: sink.x + sink.w / 2, y: sink.y + sink.h + 12 };
+    for (const door of doors) {
+      const nx = Math.max(door.x, Math.min(front.x, door.x + door.w));
+      const ny = Math.max(door.y, Math.min(front.y, door.y + door.h));
+      assert.ok(Math.hypot(front.x - nx, front.y - ny) > stalls.STALL_REACH, `${sink.id} 太靠近 ${door.id}`);
+    }
     const mirror = mirrors.find((item) => item.id === `${sink.id}-mirror`);
     assert.ok(mirror, sink.id);
-    assert.equal(mirror.room, sink.room);
     assert.equal(mirror.solid, false);
     assert.equal(mirror.x, sink.x);
     assert.ok(mirror.y <= sink.y, `${sink.id} 鏡子不在洗手台靠牆的那一側`);
@@ -1620,13 +1701,7 @@ test("each restroom has one sink along the wall, with a mirror above it", () => 
     const hits = sinks.filter((item) => item !== other && overlap(item, other));
     assert.equal(hits.length, 0, other.id);
   }
-  const doorTiles = [
-    [3, 25],
-    [4, 25],
-    [9, 25],
-    [10, 25],
-  ];
-  for (const [tx, ty] of doorTiles) {
+  for (const [tx, ty] of [[6, 25], [7, 25]]) {
     const cx = tx * 32 + 16;
     const cy = ty * 32 + 16;
     assert.ok(sinks.every((sink) => cx < sink.x || cx > sink.x + sink.w || cy < sink.y || cy > sink.y + sink.h), `${tx},${ty}`);
@@ -1638,6 +1713,9 @@ test("each restroom has one sink along the wall, with a mirror above it", () => 
     assert.match(world, new RegExp(`"${name}"`));
     assert.equal(existsSync(join(import.meta.dirname, "../public/office/assets/kenney", `${name}.glb`)), true, name);
   }
+  // Help text, the mirror note and the server all say 廁所 now.
+  const help = readFileSync(join(import.meta.dirname, "../public/index.html"), "utf8");
+  assert.doesNotMatch(help + clientSource() + roomSource(), /男廁|女廁/);
 });
 
 test("gym and pantry decor uses real models that exist, fit their rooms and leave a walkway", () => {
@@ -1680,12 +1758,12 @@ test("gym and pantry decor uses real models that exist, fit their rooms and leav
       queue.push([x + dx, y + dy]);
     }
   }
-  for (const id of ["men", "women", "gym", "pantry"]) {
+  for (const id of ["restroom", "gym", "pantry"]) {
     const zone = office.zones.find((item) => item.id === id);
     let open = 0;
     for (let ty = zone.y; ty < zone.y + zone.h; ty++) {
       for (let tx = zone.x; tx < zone.x + zone.w; tx++) {
-        if ((id === "men" || id === "women") && ty * 32 + 16 >= 968) continue;
+        if (id === "restroom" && ty * 32 + 16 >= stalls.STALL_Y) continue;
         if (blocked(tx, ty)) continue;
         open += 1;
         assert.ok(seen.has(`${tx},${ty}`), `${id} ${tx},${ty} 走不到`);

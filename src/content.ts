@@ -89,7 +89,6 @@ export type Prop = {
   /** "play" opens the game lobby. "scores" opens the leaderboard. */
   use?: "play" | "scores";
   id?: string;
-  room?: "men" | "women";
   rot?: number;
   openX?: number;
   openY?: number;
@@ -793,7 +792,7 @@ export function zoneAt(x: number, y: number, zones: Zone[]): Zone | null {
 
 export function isRestroom(x: number, y: number, zones: Zone[]): boolean {
   const zone = zoneAt(x, y, zones);
-  return zone?.id === "men" || zone?.id === "women";
+  return zone?.id === "restroom";
 }
 
 export function publicMap(map: OfficeMap) {
@@ -843,14 +842,11 @@ function makeWalls(): string[] {
   carve(33, 9);
 
   hline(24, 0, COLS - 1);
-  vline(6, 24, ROWS - 1);
   vline(12, 24, ROWS - 1);
   vline(20, 24, ROWS - 1);
   vline(29, 24, ROWS - 1);
-  carve(3, 24);
-  carve(4, 24);
-  carve(9, 24);
-  carve(10, 24);
+  carve(6, 24);
+  carve(7, 24);
   carve(15, 24);
   carve(16, 24);
   carve(23, 24);
@@ -861,20 +857,18 @@ function makeWalls(): string[] {
   return grid.map((row) => row.join(""));
 }
 
-// One wash basin on the north wall, to the left of each restroom door.
-// The door occupies tiles x=3–4 (men) and x=9–10 (women). Sinks stay clear
-// of that opening and of the stall doors.
+// Two wash basins on the restroom's north wall in the east corner, east of the door
+// (tiles x=6–7) and past the stalls, so standing at the mirror is not next to a stall door.
 function washProps(): Prop[] {
   const sinks = [
-    { id: "men-sink", room: "men" as const, x: 40 },
-    { id: "women-sink", room: "women" as const, x: 232 },
+    { id: "sink-1", x: 304 },
+    { id: "sink-2", x: 344 },
   ];
   const props: Prop[] = [];
   for (const sink of sinks) {
     props.push({
       id: sink.id,
       kind: "sink",
-      room: sink.room,
       solid: true,
       x: sink.x,
       y: 802,
@@ -884,7 +878,6 @@ function washProps(): Prop[] {
     props.push({
       id: `${sink.id}-mirror`,
       kind: "mirror",
-      room: sink.room,
       solid: false,
       x: sink.x,
       y: 800,
@@ -951,8 +944,7 @@ export function buildOffice(): OfficeMap {
     { id: "game", name: "遊戲室", x: 28, y: 1, w: 11, h: 8, floor: "#f0e4ff" },
     { id: "hall", name: "走廊", x: 1, y: 10, w: 38, h: 2, floor: "#f7f0e4" },
     { id: "office", name: "辦公區", x: 1, y: 12, w: 38, h: 12, floor: "#fbf6ee" },
-    { id: "men", name: "男廁", x: 1, y: 25, w: 5, h: 8, floor: "#d9eeff" },
-    { id: "women", name: "女廁", x: 7, y: 25, w: 5, h: 8, floor: "#ffe0f0" },
+    { id: "restroom", name: "廁所", x: 1, y: 25, w: 11, h: 8, floor: "#d9eeff" },
     { id: "gym", name: "健身房", x: 13, y: 25, w: 7, h: 8, floor: "#e8f0ff" },
     { id: "pantry", name: "茶水間", x: 21, y: 25, w: 8, h: 8, floor: "#fff1d4" },
     { id: "sofa", name: "沙發區", x: 30, y: 25, w: 9, h: 8, floor: "#e5f7ef" },
@@ -987,8 +979,7 @@ export function buildOffice(): OfficeMap {
     sign(224, 10, "接待處"),
     sign(21 * TILE, 10, "會議室"),
     sign(33 * TILE, 10, "遊戲室"),
-    sign(4 * TILE, 23, "男廁"),
-    sign(10 * TILE, 23, "女廁"),
+    sign(7 * TILE, 23, "廁所"),
     sign(16 * TILE, 23, "健身房"),
     sign(24 * TILE, 23, "茶水間"),
     sign(34 * TILE, 23, "沙發區"),
@@ -1053,8 +1044,9 @@ export function buildOffice(): OfficeMap {
     ["街機", 29 * TILE + 34, 2 * TILE + 4 + 72 + 16],
     ["排行榜", 32 * TILE + 40, 6 * TILE + 48],
     ["辦公區", 8 * TILE + 16, 17 * TILE + 16],
-    ["男廁", 4 * TILE, 27 * TILE + 16],
-    ["女廁", 10 * TILE, 27 * TILE + 16],
+    ["廁所", 7 * TILE, 27 * TILE + 16],
+    ["隔間 A", 100, 960],
+    ["隔間 B", 222, 960],
     ["健身房", 16 * TILE, 30 * TILE + 16],
     ["茶水間", 24 * TILE, 30 * TILE + 16],
     ["流理台", 26 * TILE + 16, 27 * TILE + 16],

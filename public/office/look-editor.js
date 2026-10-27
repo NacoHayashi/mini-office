@@ -38,7 +38,7 @@ export function showAvatar(mode) {
   $("avatar-name").value = profile?.displayName || "";
   $("avatar-title").textContent = mode === "mirror" ? "廁所鏡子" : "打造你的造型";
   $("avatar-note").textContent = mode === "mirror"
-    ? "只有在男廁或女廁可以調整造型。名稱也可以一起改。"
+    ? "只有在廁所可以調整造型。名稱也可以一起改。"
     : `大家會看到這個造型。名稱下面會標 @${profile?.id || "id"}。`;
   $("avatar-save").textContent = mode === "mirror" ? "換上這個造型" : "進入辦公室";
   $("avatar-cancel").hidden = mode !== "mirror";

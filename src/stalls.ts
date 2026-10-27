@@ -1,16 +1,15 @@
 // Restroom stalls. Coordinates match the office map (1 unit = 1 pixel).
 // Door yaw 0 faces north, the same layout-forward used by seated actors.
 
-export const STALL_REACH = 42;
+// Reach is measured from a person's center to the closed door. A wide body standing
+// fully inside a stall is still within reach of its own door.
+export const STALL_REACH = 60;
 export const STALL_META = "stall_doors";
 export const STALL_COOLDOWN_MS = 300;
-
-export type StallRoom = "men" | "women";
 
 export type StallPart = {
   id: string;
   kind: "stallwall" | "stalldoor" | "toilet";
-  room: StallRoom;
   x: number;
   y: number;
   w: number;
@@ -26,63 +25,47 @@ export type StallPart = {
 
 type Box = { x: number; y: number; w: number; h: number };
 
-const DOOR_W = 64;
+// One restroom with two stalls side by side along its south wall. Each stall is wide
+// and deep enough that the widest body fits between the toilet and the closed door.
+// Doors swing in along the west partition, so the walkway in front stays clear.
+export const STALL_X = 32;
+export const STALL_Y = 896;
+export const STALL_INNER = 116;
 const DOOR_H = 10;
 const WALL_T = 8;
-const STALL_Y = 968;
-const WALL_H = 84;
+const WALL_H = 1056 - STALL_Y;
+const TOILET_W = 34;
+const TOILET_H = 40;
+const TOILET_Y = 1008;
 
-function stallAt(room: StallRoom, id: string, x: number, tint: string): StallPart[] {
-  const doorX = x + WALL_T;
+function wallAt(id: string, x: number, tint: string): StallPart {
+  return { id, kind: "stallwall", x, y: STALL_Y, w: WALL_T, h: WALL_H, solid: true, rot: 90, tint };
+}
+
+function stallAt(id: string, x: number, tint: string): StallPart[] {
   return [
-    {
-      id: `${id}-west`,
-      kind: "stallwall",
-      room,
-      x,
-      y: STALL_Y,
-      w: WALL_T,
-      h: WALL_H,
-      solid: true,
-      rot: 90,
-      tint,
-    },
     {
       id,
       kind: "stalldoor",
-      room,
-      x: doorX,
+      x,
       y: STALL_Y,
-      w: DOOR_W,
+      w: STALL_INNER,
       h: DOOR_H,
       solid: true,
       rot: 0,
       tint,
-      openX: doorX,
-      openY: STALL_Y - DOOR_W,
+      openX: x,
+      openY: STALL_Y + DOOR_H,
       openW: DOOR_H,
-      openH: DOOR_W,
-    },
-    {
-      id: `${id}-east`,
-      kind: "stallwall",
-      room,
-      x: doorX + DOOR_W,
-      y: STALL_Y,
-      w: WALL_T,
-      h: WALL_H,
-      solid: true,
-      rot: 90,
-      tint,
+      openH: STALL_INNER,
     },
     {
       id: `${id}-toilet`,
       kind: "toilet",
-      room,
-      x: doorX + (DOOR_W - 34) / 2,
-      y: 1008,
-      w: 34,
-      h: 40,
+      x: x + (STALL_INNER - TOILET_W) / 2,
+      y: TOILET_Y,
+      w: TOILET_W,
+      h: TOILET_H,
       solid: true,
       rot: 0,
       tint,
@@ -90,15 +73,16 @@ function stallAt(room: StallRoom, id: string, x: number, tint: string): StallPar
   ];
 }
 
-// Each restroom is five tiles wide, so its two stalls sit wall to wall.
-// Butter-yellow partitions follow the Bubbly Bathroom look in both rooms.
+// Butter-yellow partitions follow the Bubbly Bathroom look. The middle partition is shared.
 export function stallProps(): StallPart[] {
   const tint = "#ffe9a8";
+  const step = WALL_T + STALL_INNER;
   return [
-    ...stallAt("men", "men-a", 32, tint),
-    ...stallAt("men", "men-b", 112, tint),
-    ...stallAt("women", "women-a", 224, tint),
-    ...stallAt("women", "women-b", 304, tint),
+    wallAt("stall-west", STALL_X, tint),
+    ...stallAt("stall-a", STALL_X + WALL_T, tint),
+    wallAt("stall-mid", STALL_X + step, tint),
+    ...stallAt("stall-b", STALL_X + step + WALL_T, tint),
+    wallAt("stall-east", STALL_X + 2 * step, tint),
   ];
 }
 
@@ -172,19 +156,19 @@ export class StallDoors {
     return false;
   }
 
-  // Bodies lists everyone in the room; a door never swings onto someone.
+  // Bodies lists everyone in the room with their body size; a door never swings onto someone.
   toggle(
     id: string,
     x: number,
     y: number,
-    bodies: Array<{ x: number; y: number }> = [],
+    bodies: Array<{ x: number; y: number; r?: number }> = [],
     radius = 11,
   ): { ok: true; open: boolean } | { ok: false; reason: StallFail } {
     const door = this.parts.find((part) => part.kind === "stalldoor" && part.id === id);
     if (!door) return { ok: false, reason: "unknown" };
     if (!near(x, y, door, STALL_REACH)) return { ok: false, reason: "far" };
     const target = doorBox(door, !this.open.has(id));
-    if (bodies.some((body) => hits(body.x, body.y, radius, target))) return { ok: false, reason: "busy" };
+    if (bodies.some((body) => hits(body.x, body.y, body.r ?? radius, target))) return { ok: false, reason: "busy" };
     if (this.open.has(id)) this.open.delete(id);
     else this.open.add(id);
     return { ok: true, open: this.open.has(id) };

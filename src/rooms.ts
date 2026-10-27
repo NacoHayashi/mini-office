@@ -1,4 +1,5 @@
 import type { Prop } from "./content";
+import { STALL_INNER, STALL_X } from "./stalls";
 
 // Fixed room dressing for the restrooms, the gym and the pantry. Each entry is
 // one GLB from public/office/assets/kenney fitted into its box (1 unit = 1 px).
@@ -12,20 +13,23 @@ function piece(
   w: number,
   h: number,
   tall: number,
-  opts: { solid?: boolean; rot?: number; lift?: number; room?: "men" | "women" } = {},
+  opts: { solid?: boolean; rot?: number; lift?: number } = {},
 ): Prop {
-  return { kind: "decor", model, x, y, w, h, tall, solid: opts.solid ?? true, rot: opts.rot ?? 0, lift: opts.lift, room: opts.room };
+  return { kind: "decor", model, x, y, w, h, tall, solid: opts.solid ?? true, rot: opts.rot ?? 0, lift: opts.lift };
 }
 
-// Toilet roll holders sit on each stall's east partition, beside the toilet.
+// Restroom: x 32–384, y 800–1056, door at x 192–256, stalls x 32–288 along the south
+// wall, sinks in the north-east corner. Toilet roll holders sit on each stall's east
+// partition, beside the toilet.
 function restroomDecor(): Prop[] {
-  const rolls = [32, 112, 224, 304].map((x) => piece("bath-roll", x + 58, 1016, 12, 8, 7, { solid: false, lift: 16, rot: 270 }));
+  const step = 8 + STALL_INNER;
+  const rolls = [1, 2].map((n) => piece("bath-roll", STALL_X + n * step - 12, 1016, 12, 8, 7, { solid: false, lift: 16, rot: 270 }));
   return [
     ...rolls,
-    piece("bath-mat", 42, 834, 36, 24, 2, { solid: false, room: "men" }),
-    piece("bath-mat", 234, 834, 36, 24, 2, { solid: false, room: "women" }),
-    piece("bath-plant", 166, 806, 20, 20, 22, { room: "men" }),
-    piece("bath-plant", 358, 806, 20, 20, 22, { room: "women" }),
+    piece("bath-mat", 306, 834, 36, 24, 2, { solid: false }),
+    piece("bath-mat", 346, 834, 36, 24, 2, { solid: false }),
+    piece("bath-plant", 38, 806, 20, 20, 22),
+    piece("bath-plant", 358, 1030, 20, 20, 22),
   ];
 }
 

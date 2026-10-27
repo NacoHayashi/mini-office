@@ -396,7 +396,7 @@ export abstract class RoomLogin extends RoomBase {
       this.sql.exec(`UPDATE members SET display_name = ? WHERE id = ?`, name, member.id);
     }
     if (body.animal !== undefined || body.look !== undefined) {
-      if (member.animal) return { status: 403, data: { error: "請到男廁或女廁更換造型" } };
+      if (member.animal) return { status: 403, data: { error: "請到廁所更換造型" } };
       const look = incomingLook(body, null);
       if (!look) return { status: 400, data: { error: "造型不正確" } };
       const animal = avatarAnimal(body.animal, look);

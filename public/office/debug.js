@@ -24,7 +24,6 @@ export function exposeDebug() {
       return (state.map?.props || []).map((prop) => ({
         id: prop.id,
         kind: prop.kind,
-        room: prop.room,
         x: prop.x,
         y: prop.y,
         w: prop.w,

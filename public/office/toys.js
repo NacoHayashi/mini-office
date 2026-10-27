@@ -12,7 +12,7 @@ const CATCH_GRACE_MS = 450;
 const RAM_COOL_MS = 3000;
 const BUMP_COOL_MS = 2500;
 const HEAR = 560;
-const RANGE = { horn: 150, popper: 150, bubble: 260, wand: 260, water: 300, frisbee: 320 };
+const RANGE = { bubble: 260, wand: 260, water: 300 };
 
 const PASTEL = { pink: 0xffa8c8, peach: 0xffc6a0, butter: 0xffe48a, mint: 0xa6e8cf, sky: 0x9fd4ff, lilac: 0xcdb4ff, cream: 0xfffdf6 };
 const gradient = stepGradient([176, 222, 255]);
@@ -117,52 +117,6 @@ function waterGun() {
   return group;
 }
 
-function partyPopper() {
-  const group = new THREE.Group();
-  const cone = part(new THREE.ConeGeometry(2.6, 8, 16, 1, true), PASTEL.pink, { side: THREE.DoubleSide });
-  cone.rotation.x = Math.PI;
-  cone.position.y = 5;
-  const bands = [PASTEL.butter, PASTEL.mint];
-  bands.forEach((color, i) => {
-    const band = part(new THREE.TorusGeometry(0.9 + i * 0.75, 0.32, 6, 16), color);
-    band.rotation.x = Math.PI / 2;
-    band.position.y = 3 + i * 2.4;
-    group.add(band);
-  });
-  const rim = part(new THREE.TorusGeometry(2.6, 0.4, 6, 18), PASTEL.butter);
-  rim.rotation.x = Math.PI / 2;
-  rim.position.y = 9;
-  const string = part(new THREE.CylinderGeometry(0.2, 0.2, 2.6, 6), PASTEL.cream);
-  string.position.y = 0;
-  group.add(cone, rim, string);
-  return group;
-}
-
-// A bike horn: squeeze bulb at the back, flared bell at the front.
-function toyHorn() {
-  const group = new THREE.Group();
-  const bulb = part(new THREE.SphereGeometry(2.6, 14, 10), PASTEL.pink);
-  bulb.scale.set(1, 1, 1.15);
-  bulb.position.set(0, 2.4, -2.4);
-  const tube = forward(part(new THREE.CylinderGeometry(0.7, 0.8, 4, 10), PASTEL.butter));
-  tube.position.set(0, 2.4, 1.4);
-  const bell = forward(part(new THREE.CylinderGeometry(3.2, 0.9, 4, 18, 1, true), PASTEL.butter, { side: THREE.DoubleSide }));
-  bell.position.set(0, 2.4, 5.2);
-  group.add(bulb, tube, bell);
-  return group;
-}
-
-function frisbee() {
-  const points = [[0, 1.1], [3.2, 1], [4.6, 0.6], [5.2, 0], [5, -0.4], [4.4, -0.3]].map(([x, y]) => new THREE.Vector2(x, y));
-  const disc = part(new THREE.LatheGeometry(points, 24), PASTEL.lilac, { side: THREE.DoubleSide });
-  const ring = part(new THREE.TorusGeometry(3, 0.3, 6, 24), PASTEL.cream);
-  ring.rotation.x = Math.PI / 2;
-  ring.position.y = 1.05;
-  const group = new THREE.Group();
-  group.add(disc, ring);
-  return group;
-}
-
 function starShape(outer, inner) {
   const shape = new THREE.Shape();
   for (let i = 0; i < 10; i++) {
@@ -190,39 +144,13 @@ function magicWand() {
   return group;
 }
 
-// A party blower: a mouthpiece and a curled paper tube that unrolls when blown.
-function partyBlower() {
-  const group = new THREE.Group();
-  const mouth = forward(part(new THREE.CylinderGeometry(0.75, 0.85, 3, 10), PASTEL.cream));
-  mouth.position.set(0, 2, 0);
-  const coil = part(new THREE.TorusGeometry(2.2, 0.85, 8, 20, Math.PI * 1.7), PASTEL.pink);
-  coil.rotation.y = Math.PI / 2;
-  coil.position.set(0, 4, 2.2);
-  coil.userData.part = "coil";
-  const tube = forward(part(new THREE.CylinderGeometry(0.85, 0.85, 12, 10), PASTEL.pink));
-  tube.geometry.translate(0, 6, 0);
-  tube.position.set(0, 2, 1.4);
-  tube.visible = false;
-  tube.userData.part = "tube";
-  const tassel = part(new THREE.SphereGeometry(0.8, 8, 6), PASTEL.butter);
-  tassel.position.set(0, 2, 13.4);
-  tassel.visible = false;
-  tassel.userData.part = "tassel";
-  group.add(mouth, coil, tube, tassel);
-  return group;
-}
-
 const ITEMS = [
   { id: "hammer", label: "嗶嗶槌", build: squeakyHammer, hand: [9, 13, 6], rack: [11, 12, 7] },
   { id: "ball", label: "沙灘球", build: beachBall, hand: [7, 7, 7], rack: [9, 9, 9] },
   { id: "pillow", label: "枕頭", model: "pillow", hand: [10, 8, 5], rack: [11, 9, 6] },
   { id: "bubble", label: "泡泡槍", build: bubbleGun, hand: [5, 7, 7], rack: [7, 9, 9] },
   { id: "water", label: "大水槍", build: waterGun, hand: [6, 9, 12], rack: [7, 10, 11] },
-  { id: "popper", label: "拉炮", build: partyPopper, hand: [4, 7, 4], rack: [6, 10, 6] },
-  { id: "horn", label: "玩具喇叭", build: toyHorn, hand: [5, 5, 7], rack: [8, 8, 10] },
-  { id: "frisbee", label: "飛盤", build: frisbee, hand: [8, 2, 8], rack: [10, 3, 10] },
   { id: "wand", label: "魔法棒", build: magicWand, hand: [5, 11, 3], rack: [7, 13, 4] },
-  { id: "blower", label: "吹龍", build: partyBlower, hand: [4, 5, 5], rack: [6, 8, 8] },
   { id: "ram", label: "撞撞車", model: "vehicle-racer", hand: [5, 6, 8], rack: [8, 12, 6] },
 ];
 const BY_ID = new Map(ITEMS.map((item) => [item.id, item]));
@@ -297,8 +225,6 @@ function ease(t) {
   const u = Math.max(0, Math.min(1, t));
   return u * u * (3 - 2 * u);
 }
-
-const CONFETTI = [PASTEL.pink, PASTEL.butter, PASTEL.mint, PASTEL.sky, PASTEL.lilac, PASTEL.peach];
 
 export function attachToys(env) {
   const { state, world, $, send, sizeOf } = env;
@@ -480,18 +406,7 @@ export function attachToys(env) {
       } else if (kind === "pinch") chirp(ctx, "sine", 600, 900, 0.12, 0.1);
       else if (kind === "bubble") for (let i = 0; i < 4; i++) chirp(ctx, "sine", 700 + i * 120, 1300 + i * 90, 0.07, 0.07, i * 0.09);
       else if (kind === "water") puff(ctx, 0.45, 0.22);
-      else if (kind === "popper") {
-        puff(ctx, 0.12, 0.6);
-        chirp(ctx, "triangle", 1800, 900, 0.1, 0.1);
-      } else if (kind === "horn") {
-        chirp(ctx, "square", 420, 380, 0.14, 0.08);
-        chirp(ctx, "square", 420, 380, 0.16, 0.08, 0.2);
-      } else if (kind === "frisbee") chirp(ctx, "sine", 500, 900, 0.3, 0.06);
       else if (kind === "wand") for (let i = 0; i < 5; i++) chirp(ctx, "sine", 900 + i * 220, 1100 + i * 220, 0.12, 0.06, i * 0.06);
-      else if (kind === "blower") {
-        chirp(ctx, "sawtooth", 300, 520, 0.35, 0.05);
-        puff(ctx, 0.2, 0.15);
-      }
     } catch {
       /* audio is optional */
     }
@@ -547,11 +462,7 @@ export function attachToys(env) {
     ball: [[1.8, 2, 2.2], [0, 0, 0]],
     bubble: [[1.6, -0.6, 1.2], [0, 0, 0]],
     water: [[1.6, -1, 0.4], [0, 0, 0]],
-    popper: [[1.6, 0, 1.4], [0.5, 0, 0]],
-    horn: [[1.6, -0.4, 1], [0, 0, 0]],
-    frisbee: [[2, 1.4, 1.6], [0, 0, 1.2]],
     wand: [[1.6, 0, 1], [0.3, 0, -0.15]],
-    blower: [[1.4, -0.6, 1], [0, 0, 0]],
     ram: [[2.2, 1.6, 0.8], [0, Math.PI / 2, 0]],
   };
 
@@ -565,8 +476,6 @@ export function attachToys(env) {
     prop.position.set(at[0], at[1], at[2]);
     prop.rotation.set(turn[0], turn[1], turn[2]);
     const fx = effects.get(pose.actor.userData.pid);
-    prop.visible = !(fx?.away && now < fx.away);
-    if (pose.toy === "blower") paintBlower(prop, fx?.blow ? (now - fx.blow) / 1000 : -1, fx);
     const swing = fx?.swing;
     if (!swing) return;
     const t = (now - swing.t0) / 1000;
@@ -586,23 +495,6 @@ export function attachToys(env) {
       arm.position.z += 2 * lift;
       prop.rotation.x -= 0.25 * lift;
     }
-  }
-
-  function paintBlower(prop, t, fx) {
-    let open = 0;
-    if (t >= 0 && t < 0.9) open = t < 0.15 ? t / 0.15 : t < 0.6 ? 1 : 1 - (t - 0.6) / 0.3;
-    else if (t >= 0.9 && fx) fx.blow = 0;
-    prop.traverse((node) => {
-      const role = node.userData?.part;
-      if (role === "coil") node.visible = open < 0.2;
-      else if (role === "tube") {
-        node.visible = open >= 0.2;
-        node.scale.y = Math.max(0.15, open);
-      } else if (role === "tassel") {
-        node.visible = open >= 0.2;
-        node.position.z = 1.4 + 12 * Math.max(0.15, open);
-      }
-    });
   }
 
   // ---- per-actor effects ---------------------------------------------------
@@ -663,15 +555,6 @@ export function attachToys(env) {
       const t = (now - fx.float) / 1000;
       if (t > 2.4) fx.float = 0;
       else if (t >= 0) rig.position.y += (10 * Math.sin((Math.PI * t) / 2.4) + Math.sin(t * 6) * 1.2) * lift;
-    }
-    if (fx.hop) {
-      // Startled by the horn: one jump with a stretch.
-      const t = (now - fx.hop) / 1000;
-      if (t > 0.6) fx.hop = 0;
-      else if (t >= 0) {
-        if (t < 0.4) rig.position.y += 12 * Math.sin((Math.PI * t) / 0.4) * lift;
-        sy *= 1 + 0.15 * Math.sin(Math.min(1, t / 0.4) * Math.PI);
-      }
     }
     if (fx.tiny) {
       // The wand shrinks them for a moment, then they pop back with a spring.
@@ -757,11 +640,11 @@ export function attachToys(env) {
       if (place.at === "rack" && spot) {
         node = makeProp(item, item.rack);
         if (node) {
-          // Four to a row: two rows on top of the low shelf and one on the middle shelf.
+          // Four to a row: one row on top of the low shelf and one on the middle shelf.
           const col = slot % 4;
           const row = Math.floor(slot / 4);
           const x = spot.x - (spot.w * 3) / 8 + col * (spot.w / 4);
-          if (row < 2) node.position.set(x, 34, spot.y - 6 + row * 10);
+          if (row < 1) node.position.set(x, 34, spot.y);
           else node.position.set(x, 17, spot.y + 2);
         }
         slot += 1;
@@ -846,18 +729,14 @@ export function attachToys(env) {
       return;
     }
     const at = new THREE.Vector3(actor.position.x, top - 12, actor.position.z);
-    const many = { feathers: 12, confetti: 30, splash: 14, sparkles: 10, bubbles: 10 }[kind] || 10;
+    const many = { feathers: 12, splash: 14, sparkles: 10, bubbles: 10 }[kind] || 10;
     for (let i = 0; i < many; i++) {
       const a = Math.random() * Math.PI * 2;
       const speed = 22 + Math.random() * 26;
       let node;
       let motion = { vx: Math.cos(a) * speed, vz: Math.sin(a) * speed, vy: 26 + Math.random() * 28, spin: (Math.random() - 0.5) * 9, life: 1500 };
       if (kind === "feathers") node = part(new THREE.PlaneGeometry(3.2, 1.2), PASTEL.cream, { side: THREE.DoubleSide, transparent: true });
-      else if (kind === "confetti") {
-        node = part(new THREE.PlaneGeometry(1.6, 2.4), CONFETTI[i % CONFETTI.length], { side: THREE.DoubleSide, transparent: true });
-        at.y = top + 6;
-        motion = { ...motion, vy: 50 + Math.random() * 40, spin: (Math.random() - 0.5) * 16, life: 1900, gravity: 70, drag: 2.5 };
-      } else if (kind === "splash") {
+      else if (kind === "splash") {
         node = dot(PASTEL.sky, 0.9 + Math.random() * 0.6, { opacity: 0.85 });
         motion = { ...motion, vy: 30 + Math.random() * 30, life: 800, gravity: 140 };
       } else if (kind === "sparkles") {
@@ -889,19 +768,10 @@ export function attachToys(env) {
         f.node.position.y += Math.abs(Math.sin(u * Math.PI * 2)) * 4 * (1 - u);
       } else {
         const end = anchorOf(f.to || "", f.toY) || f.start;
-        if (f.back) {
-          // Out to them and back to the thrower like a boomerang.
-          const home = anchorOf(f.back, f.fromY ?? 30) || f.start;
-          if (u < 0.5) f.node.position.lerpVectors(f.start, end, ease(u * 2));
-          else f.node.position.lerpVectors(end, home, ease((u - 0.5) * 2));
-          f.node.position.y += Math.sin(u * Math.PI * 2) * 6;
-        } else {
-          f.node.position.lerpVectors(f.start, end, u);
-          f.node.position.y += Math.sin(u * Math.PI) * f.arc;
-        }
+        f.node.position.lerpVectors(f.start, end, u);
+        f.node.position.y += Math.sin(u * Math.PI) * f.arc;
       }
-      if (f.flat) f.node.rotation.y += dt * f.spin;
-      else f.node.rotation.x += dt * f.spin;
+      f.node.rotation.x += dt * f.spin;
       if (u >= 1) {
         disposeTree(f.node);
         flights.splice(i, 1);
@@ -1096,9 +966,9 @@ export function attachToys(env) {
       }
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return;
       if (event.key.startsWith("Arrow")) event.stopImmediatePropagation();
-      // 1–9 pick the first nine toys, 0 the tenth.
-      if (/^[0-9]$/.test(event.key)) {
-        const index = event.key === "0" ? 9 : Number(event.key) - 1;
+      // 1–7 pick a toy.
+      if (/^[1-9]$/.test(event.key)) {
+        const index = Number(event.key) - 1;
         const pick = menu.querySelectorAll("button.item")[index];
         if (pick && !pick.disabled) pick.click();
       }
@@ -1289,11 +1159,7 @@ export function attachToys(env) {
     pillow: (id) => `用枕頭打 @${id}`,
     bubble: (id) => `對 @${id} 吹泡泡`,
     water: (id) => `用水槍噴 @${id}`,
-    popper: (id) => `對 @${id} 拉拉炮`,
-    horn: (id) => `對 @${id} 按喇叭`,
-    frisbee: (id) => `把飛盤丟給 @${id}`,
     wand: (id) => `對 @${id} 施魔法`,
-    blower: (id) => `對 @${id} 吹吹龍`,
   };
 
   function prompt() {
@@ -1408,27 +1274,6 @@ export function attachToys(env) {
         emote(fx.to, "好冰！", 1600);
       });
       if (heard(fx.by)) sound("water");
-    } else if (kind === "popper") {
-      fxOf(fx.by).swing = { t0: now };
-      burst(fx.to, "confetti");
-      fxOf(fx.to).squash = now;
-      fxOf(fx.to).low = 1;
-      emote(fx.to, "恭喜恭喜！", 1800);
-      if (heard(fx.to)) sound("popper");
-    } else if (kind === "horn") {
-      fxOf(fx.by).swing = { t0: now };
-      fxOf(fx.to).hop = now + 80;
-      emote(fx.by, "叭叭！", 1200);
-      later(200, () => emote(fx.to, "嚇我一跳！", 1500));
-      if (heard(fx.by)) sound("horn");
-    } else if (kind === "frisbee") {
-      fxOf(fx.by).away = now + 1100;
-      fly(makeProp(BY_ID.get("frisbee"), [9, 2, 9]), fx.by, fx.to, 1100, { back: fx.by, fromY: 26, toY: 32, flat: true, spin: 18 });
-      later(550, () => {
-        fxOf(fx.to).wobble = performance.now();
-        emote(fx.to, "差點接到！", 1400);
-      });
-      if (heard(fx.by)) sound("frisbee");
     } else if (kind === "wand") {
       fxOf(fx.by).swing = { t0: now };
       fly(sparkle(8), fx.by, fx.to, 450, { arc: 20, fromY: 34, toY: 40, spin: 0 });
@@ -1439,13 +1284,6 @@ export function attachToys(env) {
         emote(fx.to, "變小了！", 1600);
       });
       if (heard(fx.by)) sound("wand");
-    } else if (kind === "blower") {
-      fxOf(fx.by).blow = now;
-      later(220, () => {
-        fxOf(fx.to).wobble = performance.now();
-        emote(fx.to, "噗～", 1300);
-      });
-      if (heard(fx.by)) sound("blower");
     } else if (kind === "pinch") {
       if (fx.on) {
         fxOf(fx.to).pinch = { on: true, t0: now, until: now + (fx.ms || 2000) };

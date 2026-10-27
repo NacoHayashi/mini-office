@@ -1,7 +1,7 @@
 import * as THREE from "./vendor/three.module.js";
 
 // Keep in sync with STALL_REACH in src/stalls.ts.
-const REACH = 42;
+const REACH = 60;
 
 function swingDoor(group, wrap) {
   group.updateMatrixWorld(true);
@@ -133,7 +133,7 @@ export function attachStalls(env) {
   }
 
   function view() {
-    return doors().map((prop) => ({ id: prop.id, room: prop.room, open: isOpen(prop.id) }));
+    return doors().map((prop) => ({ id: prop.id, open: isOpen(prop.id) }));
   }
 
   function action() {
