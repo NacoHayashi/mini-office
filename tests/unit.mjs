@@ -2191,3 +2191,57 @@ test("訪客改用已有成員的 Telegram 時，沿用成員資料並把分數�
   assert.equal(await me(member.cookie), 200, "成員原本的裝置不受影響");
   db.close();
 });
+
+test("desk monitors light up for whoever sits at that desk and go dark when they stand", async () => {
+  const monitorFile = join(outdir, "monitors.mjs");
+  await esbuild.build({
+    entryPoints: [join(import.meta.dirname, "../public/office/monitors.js")],
+    bundle: true,
+    format: "esm",
+    platform: "neutral",
+    outfile: monitorFile,
+  });
+  const monitors = await import(pathToFileURL(monitorFile).href);
+  const office = content.buildOffice();
+  const specs = new Map(content.palette().map((item) => [item.kind, item]));
+  const furniture = office.furniture.map((item) => ({ ...item, seat: null }));
+  const here = new Set(["momo", "naco"]);
+  const present = (id) => here.has(id);
+  const chair = (id) => furniture.find((item) => item.id === id);
+  assert.deepEqual([...monitors.litMonitors(furniture, present, specs)], []);
+  chair("desk-3-chair").seat = "momo";
+  assert.deepEqual([...monitors.litMonitors(furniture, present, specs)], ["desk-3-monitor"]);
+  chair("desk-7-chair").seat = "naco";
+  assert.deepEqual([...monitors.litMonitors(furniture, present, specs)].sort(), ["desk-3-monitor", "desk-7-monitor"]);
+  // A meeting room chair is nowhere near a desk.
+  chair("meet-chair-w").seat = "naco";
+  assert.deepEqual([...monitors.litMonitors(furniture, present, specs)].sort(), ["desk-3-monitor", "desk-7-monitor"]);
+  // Standing up turns the screen off; someone who already left does not keep it on.
+  chair("desk-3-chair").seat = null;
+  here.delete("naco");
+  assert.deepEqual([...monitors.litMonitors(furniture, present, specs)], []);
+  // Every desk chair at home lights its own desk's monitor and no other.
+  here.add("naco");
+  for (const item of furniture) item.seat = null;
+  for (let desk = 1; desk <= 10; desk++) {
+    chair(`desk-${desk}-chair`).seat = "naco";
+    assert.deepEqual([...monitors.litMonitors(furniture, present, specs)], [`desk-${desk}-monitor`]);
+    chair(`desk-${desk}-chair`).seat = null;
+  }
+});
+
+test("monitor screens switch on the model's own glass, with no extra sheet stuck on top", () => {
+  const props = readFileSync(join(import.meta.dirname, "../public/office/world-props.js"), "utf8");
+  const start = props.indexOf('if (kind === "monitor") {');
+  const block = props.slice(start, props.indexOf("return true;", start));
+  assert.match(block, /markScreen\(model\)/);
+  assert.doesNotMatch(block, /glowPlane/);
+  const source = readFileSync(join(import.meta.dirname, "../public/office/monitors.js"), "utf8");
+  // A feature file only declares things; nothing runs when it is loaded.
+  for (const line of source.split("\n")) {
+    if (!line || /^\s/.test(line) || line.startsWith("//") || line.startsWith("/**") || line === "}") continue;
+    assert.match(line, /^(export )?(function|const) /, line);
+  }
+  assert.match(clientSource(), /attachMonitors\(\{ state, world \}\)/);
+  assert.match(worldSource(), /setMonitorHook/);
+});

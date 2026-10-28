@@ -28,6 +28,7 @@
 - `public/office/furnish.js`：載入 Kenney GLB 家具。
 - `public/office/toon.js`：卡通材質與家具描邊。
 - `public/office/snacks.js`、`public/office/lala.js`：零食互動、Lala 櫃檯人員朝向。
+- `public/office/monitors.js`：有人坐在桌前時那張桌子的螢幕亮起，起身就暗。
 - `panel/`：管理頁的頁面、腳本與樣式；`public/office/office.css`：辦公室樣式。
 - `public/office/vendor/`：打包好的第三方程式，不要手改。
 - `tests/unit.mjs`、`tests/office.e2e.mjs`、`tests/lobby.e2e.mjs`：單元、辦公室 e2e、大廳 e2e。

@@ -232,6 +232,8 @@ export function createWorld({ view, preview, labels, fallback }) {
   const floaters = new Map();
   const auras = new Map();
   let builtMap = null;
+  let monitorHook = null;
+  function setMonitorHook(fn) { monitorHook = typeof fn === "function" ? fn : null; }
   const { buildFloor, buildWalls, textPlane } = createRooms({
     floorGroup,
     mat,
@@ -359,6 +361,7 @@ export function createWorld({ view, preview, labels, fallback }) {
       forgetFace() {},
       get pitch() { return 0; },
       setStallHook() {},
+      setMonitorHook() {},
       screenToWorld(clientX, clientY) {
         const rect = rectOf();
         return { x: clientX - rect.left, y: clientY - rect.top };
@@ -439,6 +442,10 @@ export function createWorld({ view, preview, labels, fallback }) {
         }
       }
     }
+  }
+
+  function syncMonitors() {
+    if (monitorHook) monitorHook(furnMeshes);
   }
 
   function reveal() {
@@ -633,6 +640,7 @@ export function createWorld({ view, preview, labels, fallback }) {
     state.dt = dt || 0.016;
     world.seated = Boolean(state.me?.seat);
     syncFurniture(state);
+    syncMonitors();
     syncStallDoors(state, dt);
     spinChairs(performance.now() / 1000, state.dt);
     syncActors(state, performance.now() / 1000, dt || 0.016);
@@ -768,6 +776,7 @@ export function createWorld({ view, preview, labels, fallback }) {
     },
     screenToWorld,
     worldToScreen,
+    setMonitorHook,
     setSnackHook,
     setStallHook,
     setToyHook,

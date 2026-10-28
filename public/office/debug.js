@@ -1,5 +1,5 @@
 // window.office test hooks, exposed on localhost or with ?debug.
-import { ensureLoop, snacks, stalls, toys } from "./game.js";
+import { ensureLoop, monitors, snacks, stalls, toys } from "./game.js";
 import { pinOverlays } from "./input.js";
 import { cloneLook, presetOf } from "./look-editor.js";
 import { bodyRadius, collides, findPath, freeSpot, screenToWorld, worldToScreen } from "./movement.js";
@@ -36,6 +36,7 @@ export function exposeDebug() {
       }));
     },
     get stallDoors() { return stalls.view(); },
+    get monitors() { return monitors.view(); },
     blocked(x, y) { return collides(x, y, null, 12); },
     pose(id, rot) {
       const item = state.furniture.find((entry) => entry.id === id);

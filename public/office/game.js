@@ -1,4 +1,5 @@
 // Office client entry: wires the page, runs the frame loop, and boots the session.
+import { attachMonitors } from "./monitors.js";
 import { attachSnacks } from "./snacks.js";
 import { attachStalls } from "./stalls.js";
 import { attachToys } from "./toys.js";
@@ -29,6 +30,7 @@ export const snacks = attachSnacks({
   findPath: (...args) => findPath(...args),
 });
 export const stalls = attachStalls({ state, world, send });
+export const monitors = attachMonitors({ state, world });
 export const toys = attachToys({
   state,
   world,
