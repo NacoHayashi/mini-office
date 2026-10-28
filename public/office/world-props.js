@@ -2,6 +2,7 @@
 import * as THREE from "./vendor/three.module.js";
 import { cssColor } from "./avatar.js";
 import { createLibrary } from "./furnish.js";
+import { markScreen } from "./monitors.js";
 
 export function createProps(ctx) {
   const {
@@ -292,7 +293,7 @@ export function createProps(ctx) {
       if (!model) return false;
       model.position.y = DESK_TOP;
       group.add(model);
-      glowPlane(group, model, 0x9fd8ff);
+      markScreen(model);
       contactShadow(group, 16, 12);
       return true;
     }
@@ -529,7 +530,8 @@ export function createProps(ctx) {
       contactShadow(group, 16, 12);
       addMesh(group, geo("neck", () => new THREE.CylinderGeometry(1.6, 2, 14, 8)), mat(0xd9c8b4), 0, 33, 0, { cast: true });
       addMesh(group, roundedBox(34, 22, 3.4, 3), mat(0xf7f4ef), 0, 48, 0, { cast: true });
-      addMesh(group, roundedBox(28, 16, 1.2, 2), mat(0xb7e4ff, { emissive: 0x8fd0ff }), 0, 48, 2.2);
+      const glass = addMesh(group, roundedBox(28, 16, 1.2, 2), mat(0x2f2a3c), 0, 48, 2.2);
+      glass.userData.screen = true;
     } else if (kind === "keyboard") {
       addMesh(group, roundedBox(32, 2.4, 12, 2), mat(0xfffdfb), 0, 28.4, 0, { cast: true });
       addMesh(group, roundedBox(26, 1.2, 7, 1), mat(0xe7d8ea), 0, 30, 0);

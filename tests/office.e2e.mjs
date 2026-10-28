@@ -2954,6 +2954,88 @@ async function sofaAndUnstuck(browser) {
   await context.close();
 }
 
+async function monitorShot(page, name, view, id = "desk-3-monitor") {
+  const dir = process.env.MONITOR_SHOTS;
+  if (!dir) return;
+  mkdirSync(dir, { recursive: true });
+  await page.evaluate((view) => window.office.setView(view), view);
+  await settleView(page);
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: join(dir, `${name}-wide.png`) });
+  // Close-up around the monitor; it stands on the desk, so frame a little above its floor spot.
+  const spot = await page.evaluate((id) => {
+    const item = window.office.furniture.find((furn) => furn.id === id);
+    return window.office.worldToScreen(item.x + 20, item.y + 13);
+  }, id);
+  const size = page.viewportSize();
+  const w = 360;
+  const h = 260;
+  const x = Math.max(0, Math.min(size.width - w, spot.x - w / 2 - 30));
+  const y = Math.max(0, Math.min(size.height - h, spot.y - h / 2 - 70));
+  await page.screenshot({ path: join(dir, `${name}.png`), clip: { x, y, width: w, height: h } });
+}
+
+const litOf = (id) => window.office.monitors.find((item) => item.id === id)?.lit;
+
+async function deskMonitors(browser) {
+  const setPassword = await fetch(`${ORIGIN}/api/office/admin/password`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${ADMIN}`, origin: ORIGIN },
+    body: JSON.stringify({ password: PASS }),
+  });
+  assert(setPassword.ok, `螢幕測試沒設好密碼 ${setPassword.status}`);
+  const sitterContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const sitter = await sitterContext.newPage();
+  await register(sitter, "screen", "小螢", "貓");
+  const witnessContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const witness = await witnessContext.newPage();
+  await register(witness, "glance", "路過", "狗");
+  await assetsReady(witness);
+  await assetsReady(sitter);
+  const chair = await sitter.evaluate(() => {
+    const item = window.office.furniture.find((furn) => furn.id === "desk-3-chair");
+    return { id: item.id, x: item.x + 16, y: item.y + 13 };
+  });
+  // Every screen starts dark, on both sides.
+  for (const page of [sitter, witness]) {
+    await page.waitForFunction(() => window.office.monitors.length === 10 && window.office.monitors.every((item) => item.lit === false));
+  }
+  // The witness stands beside the desk, out of the way, and looks at the screen.
+  await march(witness, chair.x + 96, chair.y + 40);
+  const closeUp = { yaw: -0.55, dist: 300, pitch: 0.55 };
+  await monitorShot(witness, "monitor-dark", closeUp);
+  await march(sitter, chair.x, chair.y + 40);
+  await sitter.evaluate((where) => window.office.place(where.x, where.y), chair);
+  await sitter.waitForTimeout(200);
+  await sitDown(sitter, chair.id);
+  for (const page of [sitter, witness]) {
+    await page.waitForFunction(litOf, "desk-3-monitor");
+    const others = await page.evaluate(() => window.office.monitors.filter((item) => item.lit).map((item) => item.id));
+    assert(JSON.stringify(others) === JSON.stringify(["desk-3-monitor"]), `只有 3 號桌的螢幕該亮，實際 ${others.join(",")}`);
+  }
+  await monitorShot(witness, "monitor-lit", closeUp);
+  // Someone who arrives later sees the same screen on.
+  const lateContext = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+  const late = await lateContext.newPage();
+  await register(late, "later", "晚到", "兔");
+  await late.waitForFunction(litOf, "desk-3-monitor");
+  await sitter.keyboard.press("e");
+  await sitter.waitForFunction(() => !window.office.seat);
+  for (const page of [sitter, witness, late]) {
+    await page.waitForFunction((id) => window.office.monitors.find((item) => item.id === id)?.lit === false, "desk-3-monitor");
+  }
+  await monitorShot(witness, "monitor-dark-again", closeUp);
+  // Leaving while seated turns the screen off for everyone else too.
+  await sitter.evaluate((where) => window.office.place(where.x, where.y), chair);
+  await sitter.waitForTimeout(200);
+  await sitDown(sitter, chair.id);
+  await witness.waitForFunction(litOf, "desk-3-monitor");
+  await sitterContext.close();
+  await witness.waitForFunction((id) => window.office.monitors.find((item) => item.id === id)?.lit === false, "desk-3-monitor", { timeout: 15000 });
+  await lateContext.close();
+  await witnessContext.close();
+}
+
 // march() teleports in small steps; the server can still be a step behind, so retry E a few times.
 async function sitDown(page, id) {
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -3230,6 +3312,15 @@ async function main() {
       }
       return;
     }
+    if (process.argv.includes("--monitors")) {
+      try {
+        await deskMonitors(browser);
+        console.log("monitors ok");
+      } finally {
+        publishShots();
+      }
+      return;
+    }
     if (process.argv.includes("--toys")) {
       try {
         await toyRoom(browser);
@@ -3244,7 +3335,7 @@ async function main() {
       const parts = [
         [snackLounge, toyRoom, removedDeviceCanRegister, phoneCamera, coreOffice],
         [chatModeAndCamera, seatedCamera, guestOffice, chairHome, sofaAndUnstuck, reviewFixes],
-        [restrooms],
+        [restrooms, deskMonitors],
       ];
       const steps = CORE_PART ? parts[CORE_PART - 1] : parts.flat();
       try {
