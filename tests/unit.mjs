@@ -13,7 +13,7 @@ import esbuild from "esbuild";
 function readSources(files) {
   return files.map((file) => readFileSync(join(import.meta.dirname, "..", file), "utf8")).join("\n");
 }
-const ROOM_FILES = ["base", "login", "admin", "scores", "seats", "toys", "snacks", "whisper", "furniture"]
+const ROOM_FILES = ["base", "login", "admin", "scores", "seats", "toys", "snacks", "whisper", "furniture", "meeting"]
   .map((name) => `src/room-${name}.ts`)
   .concat("src/office-room.ts");
 const CLIENT_FILES = [
@@ -2244,4 +2244,121 @@ test("monitor screens switch on the model's own glass, with no extra sheet stuck
   }
   assert.match(clientSource(), /attachMonitors\(\{ state, world \}\)/);
   assert.match(worldSource(), /setMonitorHook/);
+});
+
+test("meeting room keeps a small whiteboard, the big screen, hands and one vote at a time", async () => {
+  const serverFile = join(outdir, "meeting-server.mjs");
+  await esbuild.build({ entryPoints: [join(import.meta.dirname, "../src/meeting.ts")], bundle: true, format: "esm", platform: "neutral", outfile: serverFile });
+  const server = await import(pathToFileURL(serverFile).href);
+  const room = new server.MeetingRoom();
+  room.load(null);
+  // Strokes are clamped to the board and kept short; bad ones are refused.
+  const stroke = room.draw("a", [[-20, 5.4], [400, 900], [10, 10]], 1);
+  assert.deepEqual(stroke.points, [[0, 5], [server.BOARD_W, server.BOARD_H], [10, 10]]);
+  assert.equal(room.draw("a", [[1, 1]], 9), null);
+  assert.equal(room.draw("a", Array.from({ length: server.BOARD_POINTS + 1 }, () => [1, 1]), 0), null);
+  assert.equal(room.draw("a", [[1, "x"]], 0), null);
+  for (let i = 0; i < server.BOARD_STROKES + 5; i++) room.draw("a", [[i % 300, 1]], 0);
+  assert.equal(room.strokes.length, server.BOARD_STROKES);
+  // Notes are cleaned, cut short and capped.
+  assert.equal(room.note("a", "  \u202E<b>布丁</b>\u0007  ").text, "<b>布丁</b>");
+  assert.equal(room.note("a", "   "), null);
+  assert.equal([...room.note("a", "長".repeat(80)).text].length, server.NOTE_CHARS);
+  for (let i = 0; i < 12; i++) room.note("b", `n${i}`);
+  assert.equal(room.notes.length, server.BOARD_NOTES);
+  assert.equal(room.notes.at(-1).text, "n11");
+  // The screen: presets, a short title, on and off.
+  assert.equal(room.project("a", { slide: "goal" }), null);
+  assert.deepEqual({ on: room.projector.on, slide: room.projector.slide }, { on: true, slide: "goal" });
+  assert.equal(room.project("a", { slide: "nope" }), "沒有這張投影片");
+  assert.equal(room.project("a", { title: "布丁".repeat(40) }), null);
+  assert.equal([...room.projector.title].length, server.TITLE_CHARS);
+  assert.equal(room.projector.slide, "");
+  assert.equal(room.project("a", { title: "   " }), "請輸入要投影的文字");
+  assert.equal(room.project("b", { on: false }), null);
+  assert.equal(room.projector.on, false);
+  assert.ok(room.projector.title, "turning the screen off keeps what it showed");
+  // Hands go up and down once.
+  assert.equal(room.raise("a", true), true);
+  assert.equal(room.raise("a", true), false);
+  assert.deepEqual(room.view((id) => id !== "a").hands, []);
+  assert.deepEqual(room.view().hands, ["a"]);
+  // One vote at a time, with 2 to 4 distinct options.
+  assert.match(room.startVote("a", "午餐？", ["拉麵"]), /選項/);
+  assert.match(room.startVote("a", "午餐？", ["拉麵", "拉麵"]), /選項/);
+  assert.match(room.startVote("a", "  ", ["拉麵", "咖哩"]), /問題/);
+  assert.match(room.startVote("a", "午餐？", ["1", "2", "3", "4", "5"]), /選項/);
+  assert.equal(room.startVote("a", "午餐？", ["拉麵", "咖哩", ""]), null);
+  assert.deepEqual(room.vote.options, ["拉麵", "咖哩"]);
+  assert.equal(room.startVote("b", "再一題", ["好", "不好"]), "已經有投票在進行");
+  assert.equal(room.cast("b", 1), null);
+  assert.equal(room.cast("c", 0), null);
+  assert.equal(room.cast("c", 1), null, "changing your mind replaces your vote");
+  assert.equal(room.cast("c", 5), "沒有這個選項");
+  assert.deepEqual(room.voteView().counts, [0, 2]);
+  assert.equal(room.endVote("b", true), "只有發起人可以結束投票");
+  assert.equal(room.endVote("b", false), null, "anyone can close it once the asker has left the room");
+  assert.equal(room.cast("b", 0), "現在沒有投票");
+  assert.equal(room.startVote("b", "再一題", ["好", "不好"]), null);
+  // Saved state comes back; raised hands are live only.
+  const copy = new server.MeetingRoom();
+  copy.load(room.save());
+  assert.equal(copy.strokes.length, room.strokes.length);
+  assert.deepEqual(copy.notes, room.notes);
+  assert.deepEqual(copy.projector, room.projector);
+  assert.deepEqual(copy.voteView(), room.voteView());
+  assert.equal(copy.hands.size, 0);
+  copy.load("{not json");
+  assert.equal(copy.strokes.length, 0);
+  copy.load(JSON.stringify({ strokes: [{ ink: 7, points: [[1, 1]], by: "a" }], notes: [{ text: 5, by: "a" }], projector: { on: true, slide: "x", title: "" }, vote: { question: "q", options: ["a"], by: "a" } }));
+  assert.deepEqual([copy.strokes.length, copy.notes.length, copy.projector.slide, copy.vote], [0, 0, "", null]);
+  assert.equal(room.clearBoard(), true);
+  assert.equal(room.clearBoard(), false);
+  assert.deepEqual(room.view().board, { strokes: [], notes: [] });
+  // The meeting zone matches the room on the map.
+  const office = content.buildOffice();
+  assert.equal(server.inMeeting(17 * 32, 3 * 32, office.zones), true);
+  assert.equal(server.inMeeting(656, 336, office.zones), false);
+  const screen = office.props.find((prop) => prop.kind === "screen");
+  assert.ok(screen && screen.solid && server.inMeeting(screen.x + screen.w / 2, screen.y + screen.h / 2, office.zones), "the big screen stands inside the meeting room");
+
+  const clientFile = join(outdir, "meeting-client.mjs");
+  await esbuild.build({ entryPoints: [join(import.meta.dirname, "../public/office/meeting.js")], bundle: true, format: "esm", platform: "neutral", outfile: clientFile });
+  const client = await import(pathToFileURL(clientFile).href);
+  // Client and server agree on the board and its limits.
+  for (const key of ["BOARD_W", "BOARD_H", "BOARD_POINTS", "NOTE_CHARS", "TITLE_CHARS", "QUESTION_CHARS", "OPTION_CHARS", "OPTIONS_MAX", "INKS"]) {
+    assert.deepEqual(client[key], server[key], key);
+  }
+  assert.deepEqual(client.SLIDES.map((slide) => slide.id), server.SLIDES.map((slide) => slide.id));
+  assert.equal(client.inMeetingRoom(office, 17 * 32, 3 * 32), true);
+  assert.equal(client.inMeetingRoom(office, 656, 336), false);
+  assert.deepEqual(client.thinStroke([[0, 0], [1, 1], [3, 0], [3.4, 0.2], [10, 10]]), [[0, 0], [3, 0], [10, 10]]);
+  const long = Array.from({ length: 150 }, (_, i) => [i, i % 9]);
+  const parts = client.splitStroke(long);
+  assert.ok(parts.every((part) => part.length <= server.BOARD_POINTS && part.length >= 2));
+  assert.deepEqual(parts[0].at(-1), parts[1][0], "pieces of a long stroke join up");
+  assert.equal(parts.reduce((sum, part) => sum + part.length, 0) - (parts.length - 1), long.length);
+  assert.deepEqual(client.voteTally({ options: ["a", "b", "c"], counts: [2, 2, 1] }), { total: 5, top: ["a", "b"] });
+  assert.deepEqual(client.voteTally({ options: ["a", "b"], counts: [0, 0] }), { total: 0, top: [] });
+});
+
+test("meeting tools are wired in: room chat stays in the room and hands drop on the way out", () => {
+  const room = roomSource();
+  assert.match(room, /class OfficeRoom extends RoomMeeting/);
+  assert.match(room, /class RoomMeeting extends RoomFurniture/);
+  assert.match(room, /kind === "meeting"\) this\.onMeeting/);
+  assert.match(room, /if \(this\.roomChat\(att, text, now\)\) return;/);
+  assert.match(room, /this\.settleHand\(att, true\)/);
+  assert.match(room, /meeting: this\.meetingView\(\)/);
+  assert.match(room, /if \(!this\.inMeetingRoom\(att\)\) return this\.meetingError/);
+  // Whispers inside the meeting room stay whispers.
+  const chat = room.slice(room.indexOf("protected onChat("));
+  assert.ok(chat.indexOf("att.whisper || body.whisper") < chat.indexOf("this.roomChat("));
+  const client = clientSource();
+  assert.match(client, /meeting\.onNet\(message\)/);
+  assert.match(client, /attachMeeting\(/);
+  assert.match(worldSource(), /setMeetingHook/);
+  assert.match(worldSource(), /prop\.kind === "screen"/);
+  // The meeting room gets no new storage table: everything sits in the meta row.
+  assert.ok(!/meeting/i.test(readFileSync(join(import.meta.dirname, "../src/migrations.ts"), "utf8")));
 });

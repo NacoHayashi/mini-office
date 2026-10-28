@@ -1,4 +1,5 @@
 // Office client entry: wires the page, runs the frame loop, and boots the session.
+import { attachMeeting } from "./meeting.js";
 import { attachMonitors } from "./monitors.js";
 import { attachSnacks } from "./snacks.js";
 import { attachStalls } from "./stalls.js";
@@ -31,6 +32,7 @@ export const snacks = attachSnacks({
 });
 export const stalls = attachStalls({ state, world, send });
 export const monitors = attachMonitors({ state, world });
+export const meeting = attachMeeting({ state, world, $, send });
 export const toys = attachToys({
   state,
   world,
@@ -318,6 +320,8 @@ function update(dt) {
       send({ t: "hush", off: true });
     }
   }
+  const meetingBlocked = Boolean(state.editing || state.help || state.arcade || state.boardOpen || !$("avatar").hidden);
+  if (meeting.frame(meetingBlocked)) paintChatTip();
   const zone = zoneAt(state.me.x, state.me.y);
   const name = zone?.name || "辦公室";
   if (name !== state.zoneName) {
@@ -330,7 +334,8 @@ function update(dt) {
     if (state.whisperNoteUntil > now) setHint(state.whisperNote);
     else if (phoneQuery.matches) {
       if (state.hint.startsWith("按 E") || state.hint.startsWith("按住") || state.hint.startsWith("按 F")) setHint("");
-    } else if (toys.urgent() && !toys.isOpen()) setHint(toys.prompt());
+    } else if (meeting.isOpen()) setHint("");
+    else if (toys.urgent() && !toys.isOpen()) setHint(toys.prompt());
     else if (state.whisper) setHint("按 F 離開悄悄話");
     else if (near?.grouped) setHint(`按 F 想加入 @${near.id} 的悄悄話`);
     else if (near) setHint(`按 F 跟 @${near.id} 說悄悄話`);

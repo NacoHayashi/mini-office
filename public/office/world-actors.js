@@ -231,7 +231,7 @@ export function createActors(ctx) {
       const glide = Boolean(person.seat) && Boolean(person.moving);
       animateActor(actor, (walking || glide) && gaze == null, time + (person.id || "").length, moveFace, Boolean(bubble.text), dt, gaze, gazeRate);
       if (mine) world.shown = actor.userData.heading;
-      actor.userData.label = { title: person.displayName || person.id, subtitle: `@${person.id}`, bubble };
+      actor.userData.label = { title: person.displayName || person.id, subtitle: `@${person.id}`, bubble, hand: Boolean(state.hands?.has(person.id)) };
     }
     separateBodies(bodies);
     for (const body of bodies) {

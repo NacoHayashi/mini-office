@@ -1,9 +1,9 @@
 // window.office test hooks, exposed on localhost or with ?debug.
-import { ensureLoop, monitors, snacks, stalls, toys } from "./game.js";
+import { ensureLoop, meeting, monitors, snacks, stalls, toys } from "./game.js";
 import { pinOverlays } from "./input.js";
 import { cloneLook, presetOf } from "./look-editor.js";
 import { bodyRadius, collides, findPath, freeSpot, screenToWorld, worldToScreen } from "./movement.js";
-import { onNet, requests, sendMove } from "./net.js";
+import { onNet, requests, send, sendMove } from "./net.js";
 import { $, phoneQuery, state, world } from "./office-state.js";
 
 export let keyboardOverride = null;
@@ -158,6 +158,9 @@ export function exposeDebug() {
     toyInteract() { return toys.interact(); },
     toyMenu() { return toys.openNearest(); },
     toyBump() { return toys.bump(); },
+    get meeting() { return meeting.view(); },
+    meetingOpen(tool) { meeting.open(tool || ""); },
+    meetingSend(op, extra = {}) { send({ ...extra, t: "meeting", op }); },
     feed(message) { onNet(message); },
   };
 }

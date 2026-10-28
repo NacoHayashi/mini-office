@@ -969,6 +969,7 @@ export function buildOffice(): OfficeMap {
     { kind: "arcade", solid: true, tint: "#f7b7d0", x: 34 * TILE + 4, y: 2 * TILE + 4, w: 52, h: 72 },
     { kind: "beanbag", solid: true, x: 36 * TILE + 4, y: 4 * TILE + 10, w: 46, h: 42 },
     { kind: "tv", solid: false, x: 37 * TILE + 18, y: 3 * TILE, w: 28, h: 22 },
+    { kind: "screen", id: "meet-screen", solid: true, label: "會議螢幕", x: 25 * TILE - 4, y: TILE + 4, w: 64, h: 24 },
     { kind: "scoreboard", solid: true, use: "scores", label: "排行榜", x: 32 * TILE + 8, y: 6 * TILE + 8, w: 64, h: 24 },
     ...stallProps(),
     ...washProps(),

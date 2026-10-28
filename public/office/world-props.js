@@ -138,6 +138,18 @@ export function createProps(ctx) {
       glowPlane(group, screen, 0x8fd4ff);
       return true;
     }
+    if (prop.kind === "screen") {
+      // The meeting room's big screen: a Kenney TV on its cabinet; the meeting tools paint its glass.
+      const stand = library.take("cabinetTelevision", w, h, { maxHeight: 24, stretch: 1.25 });
+      const screen = library.take("televisionModern", w * 1.05, h * 0.6, { maxHeight: 44, stretch: 1.3 });
+      if (!screen) return false;
+      if (stand) group.add(stand);
+      screen.position.y = stand ? stand.userData.fit.size.y * stand.userData.fit.sy - 2 : 0;
+      markScreen(screen);
+      group.add(screen);
+      contactShadow(group, w * 0.42, h * 0.5);
+      return true;
+    }
     if (prop.kind === "mirror") {
       const model = library.take("bath-mirror", w * 0.6, 4, { maxHeight: 15, stretch: 1.2 });
       if (!model) return false;
@@ -176,7 +188,7 @@ export function createProps(ctx) {
     const cz = prop.y + prop.h / 2;
     let occlude = true;
     const dressed = kenneyProp(prop, group) || placeStall(prop, group);
-    if (dressed && (prop.kind === "rug" || prop.kind === "mirror" || prop.kind === "tv" || (prop.kind === "decor" && !prop.solid))) occlude = false;
+    if (dressed && (prop.kind === "rug" || prop.kind === "mirror" || prop.kind === "tv" || prop.kind === "screen" || (prop.kind === "decor" && !prop.solid))) occlude = false;
     if (dressed) {
       /* Kenney mesh already fills the footprint. */
     } else if (prop.kind === "desk") {
@@ -260,13 +272,14 @@ export function createProps(ctx) {
       sign.position.set(0, 34, 0);
       group.add(sign);
       occlude = false;
-    } else if (prop.kind === "decor") {
+    } else if (prop.kind === "decor" || prop.kind === "screen") {
       // A missing model leaves an empty spot rather than a stand-in block.
       occlude = false;
     } else {
       addMesh(group, roundedBox(prop.w, 16, prop.h, 4), mat(0xe6d4c8), 0, 8, 0, { cast: true });
     }
     group.position.set(cx, 0, cz);
+    group.userData.propKind = prop.kind;
     if (prop.kind === "stalldoor" && group.userData.doorPivot) doorPivots.set(prop.id, group.userData.doorPivot);
     group.userData.occlude = occlude;
     if (occlude || group.userData.paint) ownMaterials(group);
