@@ -234,6 +234,8 @@ export function createWorld({ view, preview, labels, fallback }) {
   let builtMap = null;
   let monitorHook = null;
   function setMonitorHook(fn) { monitorHook = typeof fn === "function" ? fn : null; }
+  let meetingHook = null;
+  function setMeetingHook(fn) { meetingHook = typeof fn === "function" ? fn : null; }
   const { buildFloor, buildWalls, textPlane } = createRooms({
     floorGroup,
     mat,
@@ -362,6 +364,7 @@ export function createWorld({ view, preview, labels, fallback }) {
       get pitch() { return 0; },
       setStallHook() {},
       setMonitorHook() {},
+      setMeetingHook() {},
       screenToWorld(clientX, clientY) {
         const rect = rectOf();
         return { x: clientX - rect.left, y: clientY - rect.top };
@@ -446,6 +449,7 @@ export function createWorld({ view, preview, labels, fallback }) {
 
   function syncMonitors() {
     if (monitorHook) monitorHook(furnMeshes);
+    if (meetingHook) meetingHook(furnMeshes, propGroup);
   }
 
   function reveal() {
@@ -649,7 +653,7 @@ export function createWorld({ view, preview, labels, fallback }) {
     actorGroup.updateMatrixWorld(true);
     for (const [id, actor] of actors) {
       const label = actor.userData.label;
-      if (label) placeFloater(id, actor, label.title, label.subtitle, label.bubble);
+      if (label) placeFloater(id, actor, label.title, label.subtitle, label.bubble, label.hand);
     }
     reveal();
     shadeActors();
@@ -776,6 +780,7 @@ export function createWorld({ view, preview, labels, fallback }) {
     },
     screenToWorld,
     worldToScreen,
+    setMeetingHook,
     setMonitorHook,
     setSnackHook,
     setStallHook,

@@ -3036,6 +3036,275 @@ async function deskMonitors(browser) {
   await witnessContext.close();
 }
 
+// Close-up around a spot in the meeting room, plus the whole view.
+async function meetingShot(page, name, spot, view) {
+  const dir = process.env.MEETING_SHOTS;
+  if (!dir) return;
+  mkdirSync(dir, { recursive: true });
+  if (view) {
+    await page.evaluate((view) => window.office.setView(view), view);
+    await settleView(page);
+  }
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: join(dir, `${name}-wide.png`) });
+  if (!spot) return;
+  const at = await page.evaluate((spot) => window.office.worldToScreen(spot.x, spot.y), spot);
+  const size = page.viewportSize();
+  const w = 420;
+  const h = 300;
+  const x = Math.max(0, Math.min(size.width - w, at.x - w / 2));
+  const y = Math.max(0, Math.min(size.height - h, at.y - h / 2 - 60));
+  // The close-up is about the room itself, so the toolbar steps aside for it.
+  await page.evaluate(() => { document.querySelector("#meet-bar")?.style.setProperty("visibility", "hidden"); });
+  await page.screenshot({ path: join(dir, `${name}.png`), clip: { x, y, width: w, height: h } });
+  await page.evaluate(() => { document.querySelector("#meet-bar")?.style.removeProperty("visibility"); });
+}
+
+async function panelShot(page, name) {
+  const dir = process.env.MEETING_SHOTS;
+  if (!dir) return;
+  mkdirSync(dir, { recursive: true });
+  await page.waitForTimeout(200);
+  await page.screenshot({ path: join(dir, `${name}.png`) });
+}
+
+const meetOf = () => window.office.meeting;
+
+async function meetingRoom(browser) {
+  const setPassword = await fetch(`${ORIGIN}/api/office/admin/password`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${ADMIN}`, origin: ORIGIN },
+    body: JSON.stringify({ password: PASS }),
+  });
+  assert(setPassword.ok, `會議室測試沒設好密碼 ${setPassword.status}`);
+  const open = async (id, name, animal) => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    const slow = Number(process.env.E2E_CPU_THROTTLE || 0);
+    if (slow > 1) await (await context.newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate: slow });
+    page.on("console", (msg) => { if (process.env.E2E_CPU_THROTTLE) console.log(`[${id}] ${msg.text()}`); });
+    await register(page, id, name, animal);
+    return { context, page };
+  };
+  const { context: hostContext, page: host } = await open("chair", "主持", "貓");
+  const { context: mateContext, page: mate } = await open("mate", "同事", "狗");
+  const { context: passContext, page: passer } = await open("passby", "路人", "兔");
+  for (const page of [host, mate, passer]) await assetsReady(page);
+  const boardSpot = await host.evaluate(() => {
+    const item = window.office.furniture.find((furn) => furn.id === "board-meet");
+    return { x: item.x + 28, y: item.y + 16 };
+  });
+  // The big screen stands in the room's north-east corner.
+  const screenSpot = { x: 828, y: 48 };
+  const roomView = { yaw: 0, dist: 520, pitch: 0.7 };
+
+  // Two people walk in through the door; the third stays in the corridor.
+  await march(host, 672, 250);
+  await march(mate, 672, 250);
+  await march(mate, 560, 250);
+  await host.waitForFunction(() => window.office.meeting.inRoom && !document.querySelector("#meet-bar").hidden);
+  await mate.waitForFunction(() => window.office.meeting.inRoom);
+  assert(!(await passer.evaluate(meetOf)).inRoom, "走廊上的人不該算在會議室");
+  assert(await passer.locator("#meet-bar").isHidden(), "會議室外不該出現會議工具列");
+  assert((await host.locator("#chat-input").getAttribute("placeholder")).includes("會議室"), "在會議室聊天要提示只有室內看得到");
+
+  // Room-only chat.
+  await host.keyboard.press("t");
+  await host.locator("#chat-input").fill("開會囉，等等投票");
+  await host.keyboard.press("Enter");
+  await host.keyboard.press("Escape");
+  await mate.waitForFunction(() => window.office.tape.some((item) => item.text === "開會囉，等等投票" && item.room));
+  await passer.waitForTimeout(800);
+  assert(!(await passer.evaluate(() => window.office.tape.some((item) => item.text === "開會囉，等等投票"))), "會議室外的人不該看到會議室裡的對話");
+  await passer.keyboard.press("t");
+  await passer.locator("#chat-input").fill("走廊打招呼");
+  await passer.keyboard.press("Enter");
+  await passer.keyboard.press("Escape");
+  await host.waitForFunction(() => window.office.tape.some((item) => item.text === "走廊打招呼" && !item.room));
+
+  // Whiteboard: two strokes and a sticky note, seen by everyone.
+  await host.locator("#meet-bar button", { hasText: "白板" }).click();
+  const canvas = host.locator("#meet-canvas");
+  await canvas.waitFor();
+  const box = await canvas.boundingBox();
+  const draw = async (points) => {
+    await host.mouse.move(box.x + box.width * points[0][0], box.y + box.height * points[0][1]);
+    await host.mouse.down();
+    for (const [px, py] of points.slice(1)) await host.mouse.move(box.x + box.width * px, box.y + box.height * py, { steps: 4 });
+    await host.mouse.up();
+  };
+  // A little smiling face.
+  const smile = [];
+  for (let i = 0; i <= 16; i++) {
+    const angle = (i / 16) * Math.PI * 2;
+    smile.push([0.3 + Math.cos(angle) * 0.16, 0.5 + Math.sin(angle) * 0.3]);
+  }
+  await draw(smile);
+  await host.locator("#meet-panel button.ink").nth(1).click();
+  await draw([[0.22, 0.6], [0.26, 0.68], [0.3, 0.7], [0.34, 0.68], [0.38, 0.6]]);
+  await host.locator("#meet-panel button.ink").nth(2).click();
+  await draw([[0.24, 0.4], [0.25, 0.42]]);
+  await draw([[0.36, 0.4], [0.37, 0.42]]);
+  await host.locator("#meet-note").fill("週五吃布丁");
+  await host.locator("#meet-note-form button").click();
+  for (const page of [host, mate, passer]) {
+    await page.waitForFunction(() => window.office.meeting.board.strokes >= 4 && window.office.meeting.board.notes.includes("週五吃布丁"));
+    await page.waitForFunction(() => window.office.meeting.boardShown);
+  }
+  await panelShot(host, "board-panel");
+  await host.locator("#meet-close").click();
+  await meetingShot(mate, "board-3d", boardSpot, roomView);
+
+  // The big screen: on, a preset slide, a typed line, then off. The mate watches from beside it.
+  await march(mate, 830, 240);
+  await march(mate, 830, 160);
+  const screenView = { yaw: 0, dist: 420, pitch: 0.5 };
+  await host.locator("#meet-bar button", { hasText: "螢幕" }).click();
+  await host.locator("#meet-power").click();
+  await mate.waitForFunction(() => window.office.meeting.projector.on && window.office.meeting.screenShown);
+  await host.locator("#meet-panel [data-slide=goal]").click();
+  await mate.waitForFunction(() => window.office.meeting.projector.slide === "goal");
+  await host.locator("#meet-title-input").fill("布丁試吃大會");
+  await host.locator("#meet-title-form button").click();
+  for (const page of [host, mate, passer]) {
+    await page.waitForFunction(() => window.office.meeting.projector.title === "布丁試吃大會" && window.office.meeting.screenShown);
+  }
+  await panelShot(host, "screen-panel");
+  await meetingShot(mate, "screen-on", screenSpot, screenView);
+  await host.waitForTimeout(350);
+  await host.locator("#meet-power").click();
+  for (const page of [host, mate]) await page.waitForFunction(() => !window.office.meeting.projector.on && !window.office.meeting.screenShown);
+  await meetingShot(mate, "screen-off", screenSpot, screenView);
+  await host.waitForTimeout(350);
+  await host.locator("#meet-power").click();
+  await mate.waitForFunction(() => window.office.meeting.projector.on && window.office.meeting.projector.title === "布丁試吃大會");
+  await host.locator("#meet-close").click();
+  await march(mate, 830, 240);
+  await march(mate, 560, 240);
+
+  // Someone outside the room cannot work the screen or the board.
+  await passer.evaluate(() => window.office.meetingSend("project", { on: false }));
+  await passer.evaluate(() => window.office.meetingSend("clear"));
+  await passer.waitForTimeout(600);
+  const still = await host.evaluate(meetOf);
+  assert(still.projector.on && still.board.strokes >= 4, "會議室外的人不該能關螢幕或擦白板");
+
+  // Raising a hand shows over the head for everyone, and goes down when leaving the room.
+  await mate.locator("#meet-bar button", { hasText: "舉手" }).click();
+  for (const page of [host, mate, passer]) {
+    await page.waitForFunction(() => window.office.meeting.hands.includes("mate"));
+    await page.waitForFunction(() => {
+      const hand = document.querySelector('.floater[data-id="mate"] .hand');
+      return hand && !hand.hidden;
+    });
+  }
+  assert((await mate.locator("#meet-bar button", { hasText: "放下手" }).count()) === 1, "舉手後按鈕要變成放下手");
+  const mateSpot = await mate.evaluate(() => ({ x: window.office.me.x, y: window.office.me.y }));
+  await meetingShot(host, "hand-up", mateSpot, roomView);
+  await march(mate, 672, 250);
+  await march(mate, 672, 340);
+  for (const page of [host, mate, passer]) await page.waitForFunction(() => !window.office.meeting.hands.includes("mate"));
+  assert(await host.locator('.floater[data-id="mate"] .hand').isHidden(), "離開會議室手要放下");
+  await march(mate, 672, 250);
+  await march(mate, 560, 250);
+  await mate.waitForFunction(() => window.office.meeting.inRoom);
+
+  // A quick vote.
+  await host.locator("#meet-bar button", { hasText: "投票" }).click();
+  await host.locator("#meet-question").fill("午餐吃什麼");
+  const options = host.locator("#meet-ask .meet-option");
+  await options.nth(0).fill("拉麵");
+  await options.nth(1).fill("咖哩");
+  await options.nth(2).fill("便當");
+  await host.locator("#meet-ask button[type=submit]").click();
+  for (const page of [host, mate, passer]) await page.waitForFunction(() => window.office.meeting.vote?.open && window.office.meeting.vote.question === "午餐吃什麼");
+  await mate.locator("#meet-bar button", { hasText: "投票" }).click();
+  await mate.locator('#meet-panel [data-pick="1"]').click();
+  await host.locator('#meet-panel [data-pick="0"]').click();
+  for (const page of [host, mate]) await page.waitForFunction(() => JSON.stringify(window.office.meeting.vote?.counts) === "[1,1,0]");
+  await host.waitForTimeout(350);
+  await host.locator('#meet-panel [data-pick="1"]').click();
+  await mate.waitForFunction(() => JSON.stringify(window.office.meeting.vote?.counts) === "[0,2,0]");
+  await panelShot(mate, "vote-open");
+  // Only the person who asked can close it while they are in the room.
+  await mate.waitForTimeout(350);
+  await mate.locator("#meet-end").click();
+  await mate.waitForTimeout(600);
+  assert((await mate.evaluate(meetOf)).vote.open, "不是發起人不該能結束投票");
+  await host.locator("#meet-end").click();
+  for (const page of [host, mate, passer]) await page.waitForFunction(() => window.office.meeting.vote && !window.office.meeting.vote.open);
+  await mate.locator(".meet-last", { hasText: "最多人選：咖哩" }).waitFor();
+  await panelShot(mate, "vote-result");
+  await mate.locator("#meet-close").click();
+
+  // Someone arriving later sees the board, the screen and the last vote.
+  const { context: lateContext, page: late } = await open("late", "晚到", "熊");
+  await late.waitForFunction(() => {
+    const room = window.office.meeting;
+    return room.board.strokes >= 4 && room.board.notes.includes("週五吃布丁") && room.projector.title === "布丁試吃大會" && room.vote && !room.vote.open && room.hands.length === 0;
+  });
+  await assetsReady(late);
+  await late.waitForFunction(() => window.office.meeting.boardShown && window.office.meeting.screenShown);
+  await meetingShot(late, "late-joiner", boardSpot, roomView);
+
+  // Wiping the board asks once more; 先不要 keeps it.
+  await host.locator("#meet-bar button", { hasText: "白板" }).click();
+  const wipe = host.locator("#meet-clear");
+  await wipe.click();
+  await host.locator("#meet-clear", { hasText: "確定擦掉" }).waitFor();
+  await host.locator("#meet-clear-no").click();
+  await host.locator("#meet-clear", { hasText: "擦乾淨" }).waitFor();
+  await host.locator("#meet-clear-no").waitFor({ state: "hidden" });
+  await wipe.click();
+  await host.locator("#meet-clear", { hasText: "確定擦掉" }).waitFor();
+  await host.waitForTimeout(400);
+  assert((await host.evaluate(meetOf)).board.strokes >= 4, "按一次不該就擦掉白板");
+  await panelShot(host, "board-clear-ask");
+  await wipe.click();
+  const wipedEverywhere = () => window.office.meeting.board.strokes === 0 && window.office.meeting.board.notes.length === 0;
+  for (const page of [host, mate, late]) {
+    const ok = await page.waitForFunction(wipedEverywhere, null, { timeout: 30000 }).then(() => true, () => false);
+    if (ok) continue;
+    const seen = [];
+    for (const [who, other] of [["host", host], ["mate", mate], ["late", late]]) {
+      seen.push(`${who}=${JSON.stringify(await other.evaluate(() => ({ ...window.office.meeting, button: document.querySelector("#meet-clear")?.textContent, hint: document.querySelector("#hint")?.textContent })))}`);
+    }
+    throw new Error(`擦白板後大家的白板沒有一起變空\n${seen.join("\n")}`);
+  }
+  await host.locator("#meet-clear", { hasText: "擦乾淨" }).waitFor();
+  await host.locator("#meet-close").click();
+
+  // Phone-sized screen: big buttons that stay clear of the top bar and the chat.
+  await host.setViewportSize({ width: 390, height: 844 });
+  await host.waitForTimeout(500);
+  await host.waitForFunction(() => !document.querySelector("#meet-bar").hidden);
+  const heights = await host.locator("#meet-bar button").evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().height));
+  assert(heights.every((h) => h >= 44), `手機上的會議按鈕要夠大 ${heights.join(",")}`);
+  let hits = await overlaps(host, ["#meet-bar", "#topbar", "#actions", "#chat-toggle", "#hint"]);
+  assert(hits.length === 0, `手機上會議工具列不該擋到其他按鈕 ${hits.join(" ")}`);
+  await host.locator("#meet-bar button", { hasText: "白板" }).click();
+  hits = await overlaps(host, ["#meet-bar", "#meet-panel", "#topbar"]);
+  assert(hits.length === 0, `手機上白板不該蓋到工具列 ${hits.join(" ")}`);
+  await panelShot(host, "phone-board");
+  await host.locator("#meet-clear").click();
+  const asks = await host.locator("#meet-clear, #meet-clear-no").evaluateAll((nodes) => nodes.map((node) => {
+    const box = node.getBoundingClientRect();
+    return { h: box.height, right: box.right };
+  }));
+  assert(asks.length === 2 && asks.every((box) => box.h >= 44 && box.right <= 390), `手機上確認擦白板的按鈕要夠大也要在畫面內 ${JSON.stringify(asks)}`);
+  await panelShot(host, "phone-clear-ask");
+  await host.locator("#meet-clear-no").click();
+  await host.locator("#meet-close").click();
+  await panelShot(host, "phone-bar");
+
+  // Leaving the office lowers a raised hand too.
+  await mate.locator("#meet-bar button", { hasText: "舉手" }).click();
+  await host.waitForFunction(() => window.office.meeting.hands.includes("mate"));
+  await mateContext.close();
+  await host.waitForFunction(() => !window.office.meeting.hands.includes("mate"), null, { timeout: 15000 });
+  for (const context of [hostContext, passContext, lateContext]) await context.close();
+}
+
 // march() teleports in small steps; the server can still be a step behind, so retry E a few times.
 async function sitDown(page, id) {
   for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -3321,6 +3590,15 @@ async function main() {
       }
       return;
     }
+    if (process.argv.includes("--meeting")) {
+      try {
+        await meetingRoom(browser);
+        console.log("meeting ok");
+      } finally {
+        publishShots();
+      }
+      return;
+    }
     if (process.argv.includes("--toys")) {
       try {
         await toyRoom(browser);
@@ -3335,7 +3613,7 @@ async function main() {
       const parts = [
         [snackLounge, toyRoom, removedDeviceCanRegister, phoneCamera, coreOffice],
         [chatModeAndCamera, seatedCamera, guestOffice, chairHome, sofaAndUnstuck, reviewFixes],
-        [restrooms, deskMonitors],
+        [restrooms, deskMonitors, meetingRoom],
       ];
       const steps = CORE_PART ? parts[CORE_PART - 1] : parts.flat();
       try {

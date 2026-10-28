@@ -25,10 +25,10 @@ import {
   WHISPER_FAR,
   WS_MAX_CHARS,
 } from "./room-base";
-import { RoomFurniture } from "./room-furniture";
+import { RoomMeeting } from "./room-meeting";
 export { bearer, type Env } from "./room-base";
 
-export class OfficeRoom extends RoomFurniture implements DurableObject {
+export class OfficeRoom extends RoomMeeting implements DurableObject {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -110,7 +110,9 @@ export class OfficeRoom extends RoomFurniture implements DurableObject {
     else if (kind === "snack") this.onSnack(ws, att, body);
     else if (kind === "stall") this.onStall(ws, att, body);
     else if (kind === "toy") this.onToy(ws, att, body);
+    else if (kind === "meeting") this.onMeeting(ws, att, body);
     else if (kind === "reset") this.onReset(ws, att);
+    this.settleHand(att);
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {
@@ -127,6 +129,7 @@ export class OfficeRoom extends RoomFurniture implements DurableObject {
       this.broadcastToys(toyLeft.pinch ? { kind: "pinch", by: toyLeft.pinch.by, to: toyLeft.pinch.to, on: false } : null);
     }
     this.dropWhisper(att, ws);
+    this.settleHand(att, true);
     this.persist(att);
     this.broadcast({ t: "leave", id: att.id });
     if (this.ctx.getWebSockets().every((socket) => socket === ws)) this.resetChairs(true);
@@ -216,6 +219,7 @@ export class OfficeRoom extends RoomFurniture implements DurableObject {
       hands: this.snacks.handsView((id) => id === member.id || this.ctx.getWebSockets(id).some((ws) => this.attOf(ws))),
       doors: this.stalls.view(),
       toys: this.toys.view((id) => id === member.id || this.ctx.getWebSockets(id).some((ws) => this.attOf(ws))),
+      meeting: this.meetingView(),
     });
     this.broadcast({ t: "join", player: this.player(att) }, server);
     const held = this.snacks.handsView((id) => id === member.id)[0];
@@ -319,6 +323,7 @@ export class OfficeRoom extends RoomFurniture implements DurableObject {
       for (const member of members) this.send(member.ws, payload);
       return;
     }
+    if (this.roomChat(att, text, now)) return;
     this.broadcast({ t: "chat", id: att.id, text, at: now });
   }
 

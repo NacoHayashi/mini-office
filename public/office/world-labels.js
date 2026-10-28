@@ -23,19 +23,21 @@ export function createLabels(ctx) {
     return crownBox.max.y;
   }
 
-  function placeFloater(id, actor, title, subtitle, bubble) {
+  function placeFloater(id, actor, title, subtitle, bubble, hand = false) {
     if (!labels) return;
     let node = floaters.get(id);
     if (!node) {
       node = document.createElement("div");
       node.className = "floater";
-      node.innerHTML = '<div class="bubble"></div><div class="nametag"><b></b><small></small></div>';
+      node.innerHTML = '<div class="bubble"></div><span class="hand" aria-label="舉手" hidden>✋</span><div class="nametag"><b></b><small></small></div>';
       labels.appendChild(node);
       floaters.set(id, node);
     }
     node.dataset.id = id;
     node.querySelector("b").textContent = title || "";
     node.querySelector("small").textContent = subtitle || "";
+    const handNode = node.querySelector(".hand");
+    if (handNode && handNode.hidden === Boolean(hand)) handNode.hidden = !hand;
     const info = bubble && typeof bubble === "object" ? bubble : { text: bubble || "", kind: "" };
     const bubbleNode = node.querySelector(".bubble");
     bubbleNode.hidden = !info.text;

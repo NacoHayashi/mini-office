@@ -50,9 +50,10 @@ export function paintChatTip() {
   const input = $("chat-input");
   if (!input) return;
   const hush = Boolean(state.whisper);
-  if (phoneQuery.matches) input.placeholder = hush ? "這句只有這一圈人看得到" : "說點什麼…（Enter 送出）";
-  else if (document.activeElement === input) input.placeholder = hush ? "悄悄話：Enter 送出，Esc 回到行走" : "Enter 送出，Esc 回到行走";
-  else input.placeholder = hush ? "按 T 說悄悄話，Esc 回到行走" : "按 T 開始輸入，Esc 回到行走";
+  const room = !hush && Boolean(state.inMeeting);
+  if (phoneQuery.matches) input.placeholder = hush ? "這句只有這一圈人看得到" : room ? "只有會議室裡的人看得到" : "說點什麼…（Enter 送出）";
+  else if (document.activeElement === input) input.placeholder = hush ? "悄悄話：Enter 送出，Esc 回到行走" : room ? "會議室：只有室內的人看得到，Enter 送出" : "Enter 送出，Esc 回到行走";
+  else input.placeholder = hush ? "按 T 說悄悄話，Esc 回到行走" : room ? "按 T 在會議室說話，只有室內的人看得到" : "按 T 開始輸入，Esc 回到行走";
 }
 
 export function openChat() {

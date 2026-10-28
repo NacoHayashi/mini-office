@@ -1,12 +1,12 @@
 // The context action buttons.
-import { snacks, stalls, toys } from "./game.js";
+import { meeting, snacks, stalls, toys } from "./game.js";
 import { interact, nearestChair, nearestUse } from "./interact.js";
 import { inRestroom, nearLala } from "./movement.js";
 import { $, phoneQuery, state } from "./office-state.js";
 import { nearestWhisper, toggleWhisper } from "./whisper.js";
 
 function actionsNow() {
-  if (!phoneQuery.matches || !state.me || state.editing || state.help || state.arcade || state.boardOpen || !$("avatar").hidden || !$("dialogue").hidden || snacks.isOpen() || toys.isOpen()) return [];
+  if (!phoneQuery.matches || !state.me || state.editing || state.help || state.arcade || state.boardOpen || !$("avatar").hidden || !$("dialogue").hidden || snacks.isOpen() || toys.isOpen() || meeting.isOpen()) return [];
   const list = [];
   const near = nearestWhisper();
   if (state.whisper) list.push({ id: "leave", label: "離開悄悄話", run: toggleWhisper });

@@ -2,7 +2,7 @@
 import { createRequests } from "./requests.js";
 import { closeArcade, closeBoard, refreshBoard } from "./arcade.js";
 import { buildPalette, clearArmed, clearPendingAdd, paintTools, pendingAdd, setEditing } from "./edit-mode.js";
-import { ensureLoop, resize, snacks, stalls, toys } from "./game.js";
+import { ensureLoop, meeting, resize, snacks, stalls, toys } from "./game.js";
 import { loginOptions, showElsewhere, stopParkWatch } from "./login.js";
 import { showAvatar } from "./look-editor.js";
 import { $, setHint, state, world } from "./office-state.js";
@@ -57,6 +57,7 @@ export function showGate(message, options = {}) {
   $("help").hidden = true;
   snacks.close();
   toys.close();
+  meeting.close();
   closeArcade();
   closeBoard();
   $("form-password").hidden = false;
@@ -196,6 +197,7 @@ export function onNet(message) {
   snacks.onNet(message);
   stalls.onNet(message);
   toys.onNet(message);
+  meeting.onNet(message);
   if (message.t === "welcome") {
     state.map = message.map;
     state.furniture = message.furniture || [];
@@ -298,7 +300,7 @@ export function onNet(message) {
     other.dir = face;
   } else if (message.t === "chat") {
     if (state.tape.length > 60) state.tape.shift();
-    state.tape.push({ t: "chat", id: message.id, text: message.text, whisper: Boolean(message.whisper) });
+    state.tape.push({ t: "chat", id: message.id, text: message.text, whisper: Boolean(message.whisper), room: message.room === "meeting" });
     state.bubbles.set(message.id, { text: message.text, until: performance.now() + bubbleLife(message.text), whisper: Boolean(message.whisper) });
   } else if (message.t === "hush") {
     if (state.tape.length > 60) state.tape.shift();
