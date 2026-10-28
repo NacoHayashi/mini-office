@@ -14,12 +14,15 @@ export const MACHINE_ID = {
 
 export type SnackMachine = keyof typeof MACHINE_ID;
 export type SnackPose = "eat" | "drink";
+/** Pantry treats come from the coffee machine or the microwave and are never out of stock. */
+export type PantrySource = "coffee" | "microwave";
 
 export type SnackItem = {
   id: string;
   label: string;
-  machine: SnackMachine;
+  machine: SnackMachine | PantrySource;
   pose: SnackPose;
+  hot?: boolean;
 };
 
 export const SNACK_ITEMS: readonly SnackItem[] = [
@@ -31,7 +34,18 @@ export const SNACK_ITEMS: readonly SnackItem[] = [
   { id: "soda", label: "汽水", machine: "vendor", pose: "drink" },
   { id: "juice", label: "果汁", machine: "vendor", pose: "drink" },
   { id: "latte", label: "咖啡牛奶", machine: "vendor", pose: "drink" },
+  { id: "hotcoffee", label: "熱咖啡", machine: "coffee", pose: "drink", hot: true },
+  { id: "cocoa", label: "熱可可", machine: "coffee", pose: "drink", hot: true },
+  { id: "hottea", label: "熱紅茶", machine: "coffee", pose: "drink", hot: true },
+  { id: "bun", label: "熱包子", machine: "microwave", pose: "eat", hot: true },
 ];
+
+/** Items the cabinet and the vending machine count down. */
+export const STOCKED_ITEMS = SNACK_ITEMS.filter((item) => item.machine === "cabinet" || item.machine === "vendor");
+
+export function snackItem(id: unknown): SnackItem | undefined {
+  return typeof id === "string" ? ITEM_BY_ID.get(id) : undefined;
+}
 
 export type Stock = Record<string, number>;
 export type Anchor = { x: number; y: number };
@@ -48,7 +62,7 @@ export function isFixedId(id: string): boolean {
 
 export function fullStock(): Stock {
   const stock: Stock = {};
-  for (const item of SNACK_ITEMS) stock[item.id] = SNACK_FULL;
+  for (const item of STOCKED_ITEMS) stock[item.id] = SNACK_FULL;
   return stock;
 }
 
@@ -63,7 +77,7 @@ export function parseStock(raw: string | null | undefined): Stock {
   }
   if (!parsed || typeof parsed !== "object") return stock;
   const src = parsed as Record<string, unknown>;
-  for (const item of SNACK_ITEMS) {
+  for (const item of STOCKED_ITEMS) {
     const value = src[item.id];
     if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= SNACK_FULL) {
       stock[item.id] = value;
@@ -160,11 +174,11 @@ export class SnackRoom {
   ): TakeResult {
     if (typeof itemId !== "string") return { ok: false, reason: "unknown" };
     const item = ITEM_BY_ID.get(itemId);
-    if (!item) return { ok: false, reason: "unknown" };
+    if (!item || (item.machine !== "cabinet" && item.machine !== "vendor")) return { ok: false, reason: "unknown" };
     const prev = this.last.get(playerId);
     if (prev != null && now - prev < SNACK_COOLDOWN_MS) return { ok: false, reason: "cool" };
     if (!Number.isFinite(x) || !Number.isFinite(y)) return { ok: false, reason: "far" };
-    const anchor = anchorFor(item.machine);
+    const anchor = anchorFor(item.machine as SnackMachine);
     if (!anchor || Math.hypot(x - anchor.x, y - anchor.y) > SNACK_REACH) return { ok: false, reason: "far" };
     if ((this.stock[item.id] || 0) <= 0) return { ok: false, reason: "empty" };
     const replaced = this.hands.has(playerId);
@@ -182,12 +196,29 @@ export class SnackRoom {
     return { ok: true, itemId: item.id, pose: item.pose, stock: this.view() };
   }
 
+  /** Puts a pantry treat straight into someone's hands. Returns false for anything else. */
+  give(playerId: string, itemId: string): boolean {
+    const item = ITEM_BY_ID.get(itemId);
+    if (!item || (item.machine !== "coffee" && item.machine !== "microwave")) return false;
+    this.hands.set(playerId, item.id);
+    return true;
+  }
+
+  /** Moves whatever one person holds into another's empty hands. Returns the item id, or "". */
+  pass(from: string, to: string): string {
+    const itemId = this.hands.get(from);
+    if (!itemId || from === to || this.hands.has(to)) return "";
+    this.hands.delete(from);
+    this.hands.set(to, itemId);
+    return itemId;
+  }
+
   restock(x: number, y: number, lala: Anchor): RestockResult {
     if (!Number.isFinite(x) || !Number.isFinite(y) || Math.hypot(x - lala.x, y - lala.y) > LALA_REACH) {
       return { ok: false, reason: "far" };
     }
     let changed = false;
-    for (const item of SNACK_ITEMS) {
+    for (const item of STOCKED_ITEMS) {
       if ((this.stock[item.id] || 0) <= 0) {
         this.stock[item.id] = SNACK_FULL;
         changed = true;

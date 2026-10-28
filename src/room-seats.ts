@@ -6,6 +6,8 @@ import {
   furnitureFits,
   furnitureSize,
   hitsSolid,
+  WALL_RADIUS,
+  isSeatKind,
   type Look,
   quarterRot,
   restoreChairOccupants,
@@ -108,7 +110,7 @@ export abstract class RoomSeats extends RoomScores {
   protected onGlide(ws: WebSocket, att: Att, body: Record<string, unknown>) {
     const id = typeof body.id === "string" ? body.id : att.seat || "";
     const chair = this.chairLive(id);
-    if (!chair || chair.occupant !== att.id) return;
+    if (!chair || chair.occupant !== att.id || chair.kind !== "chair") return;
     const x = body.x;
     const y = body.y;
     const rot = quarterRot(body.rot, chair.rot);
@@ -168,15 +170,16 @@ export abstract class RoomSeats extends RoomScores {
     if (this.chairsReady) return;
     this.chairsReady = true;
     for (const row of this.sql.exec<Furn>(`SELECT id, kind, x, y, rot FROM furniture`).toArray()) {
-      if (row.kind !== "chair") continue;
-      this.rememberChair({ id: String(row.id), x: Number(row.x), y: Number(row.y), rot: Number(row.rot) || 0 });
+      if (!isSeatKind(row.kind)) continue;
+      this.rememberChair({ id: String(row.id), kind: String(row.kind), x: Number(row.x), y: Number(row.y), rot: Number(row.rot) || 0 });
     }
   }
 
-  protected rememberChair(row: { id: string; x: number; y: number; rot: number }) {
+  protected rememberChair(row: { id: string; kind?: string; x: number; y: number; rot: number }) {
     const prev = this.chairs.get(row.id);
     this.chairs.set(row.id, {
       id: row.id,
+      kind: row.kind || "chair",
       x: row.x,
       y: row.y,
       rot: row.rot,
@@ -194,7 +197,9 @@ export abstract class RoomSeats extends RoomScores {
   }
 
   protected chairCenter(chair: ChairLive): { x: number; y: number } {
-    return { x: chair.x + 16, y: chair.y + 13 };
+    if (chair.kind === "chair") return { x: chair.x + 16, y: chair.y + 13 };
+    const size = furnitureSize(chair.kind, chair.rot) || { w: 16, h: 16 };
+    return { x: chair.x + size.w / 2, y: chair.y + size.h / 2 };
   }
 
   protected attachment(id: string): Att | null {
@@ -220,6 +225,10 @@ export abstract class RoomSeats extends RoomScores {
     this.ensureChairs();
     const desks = this.map.props.filter((prop) => prop.kind === "desk");
     for (const item of this.map.furniture) {
+      if (item.kind === "stool" && force) {
+        const live = this.chairs.get(item.id);
+        if (live) live.occupant = null;
+      }
       if (item.kind !== "chair") continue;
       const live = this.chairs.get(item.id);
       if (live?.occupant && !force) continue;
@@ -227,6 +236,7 @@ export abstract class RoomSeats extends RoomScores {
       this.sql.exec(`UPDATE furniture SET x = ?, y = ?, rot = ? WHERE id = ?`, item.x, item.y, rot, item.id);
       this.chairs.set(item.id, {
         id: item.id,
+        kind: "chair",
         x: item.x,
         y: item.y,
         rot,
@@ -242,13 +252,16 @@ export abstract class RoomSeats extends RoomScores {
   protected freeBeside(chair: ChairLive, att: Att): { x: number; y: number } {
     const center = this.chairCenter(chair);
     const radius = bodyRadiusOf(att.look);
+    // Stools stand around a table and next to the counter, so stepping off one also keeps clear of those.
+    const solids = chair.kind === "chair" ? null : this.solidFurniture();
+    const blocked = (x: number, y: number) => solids !== null && hitsSolid(this.map.props, solids, x, y, WALL_RADIUS);
     for (let ring = 1; ring <= 6; ring++) {
       const step = 22 + ring * 16;
       for (let i = 0; i < 8; i++) {
         const angle = (i / 8) * Math.PI * 2;
         const x = center.x + Math.cos(angle) * step;
         const y = center.y + Math.sin(angle) * step;
-        if (this.separateFrom(att.id, x, y, att.look).x === x && this.separateFrom(att.id, x, y, att.look).y === y && !this.inWall(x, y)) {
+        if (this.separateFrom(att.id, x, y, att.look).x === x && this.separateFrom(att.id, x, y, att.look).y === y && !this.inWall(x, y) && !blocked(x, y)) {
           if (Math.hypot(x - center.x, y - center.y) >= radius * 0.45) return { x, y };
         }
       }

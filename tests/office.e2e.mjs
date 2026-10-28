@@ -3036,6 +3036,163 @@ async function deskMonitors(browser) {
   await witnessContext.close();
 }
 
+async function pantryShot(page, name, view) {
+  const dir = process.env.PANTRY_SHOTS;
+  if (!dir) return;
+  mkdirSync(dir, { recursive: true });
+  if (view) {
+    await page.evaluate((view) => window.office.setView(view), view);
+    await settleView(page);
+  }
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: join(dir, `${name}.png`) });
+}
+
+const pantryOf = () => window.office.pantry;
+
+// Walk until this appliance is the nearest one, then open its panel with E.
+async function openAppliance(page, which, x, y) {
+  await walkTo(page, x, y);
+  await page.waitForFunction((which) => window.office.pantry.near === which, which, { timeout: 15000 });
+  await page.keyboard.press("e");
+  await page.waitForFunction((which) => window.office.pantry.open === which, which);
+}
+
+async function pantryRoom(browser) {
+  const setPassword = await fetch(`${ORIGIN}/api/office/admin/password`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${ADMIN}`, origin: ORIGIN },
+    body: JSON.stringify({ password: PASS }),
+  });
+  assert(setPassword.ok, `茶水間測試沒設好密碼 ${setPassword.status}`);
+  const open = async (id, name, animal) => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    const slow = Number(process.env.E2E_CPU_THROTTLE || 0);
+    if (slow > 1) await (await context.newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate: slow });
+    await register(page, id, name, animal);
+    return { context, page };
+  };
+  const { context: baristaContext, page: barista } = await open("barista", "咖啡", "貓");
+  const { context: catcherContext, page: catcher } = await open("catcher", "接球", "狗");
+  for (const page of [barista, catcher]) await assetsReady(page);
+  const pantryView = { yaw: 0, dist: 420, pitch: 0.75 };
+
+  // The bar stools are seats; E next to a stool sits down even with the coffee machine close by.
+  const stools = await barista.evaluate(() => window.office.furniture.filter((item) => item.kind === "stool").map((item) => item.id).sort());
+  assert(JSON.stringify(stools) === JSON.stringify(["pantry-stool-e", "pantry-stool-n", "pantry-stool-s", "pantry-stool-w"]), `茶水間應該有四張高腳椅 ${stools}`);
+  // Small round things like the stools sit between path tiles, so walk down the open column by the counter.
+  await walkTo(catcher, 880, 880);
+  await walkTo(catcher, 880, 944);
+  await catcher.evaluate(() => window.office.place(858, 942));
+  await catcher.waitForFunction(() => Math.abs(window.office.me.x - 858) < 4 && Math.abs(window.office.me.y - 942) < 4);
+  await catcher.waitForFunction(() => window.office.pantry.near === "coffee");
+  await catcher.keyboard.press("e");
+  await catcher.waitForFunction(() => window.office.seat === "pantry-stool-e");
+  assert(!(await catcher.evaluate(pantryOf)).open, "坐高腳椅時不該打開咖啡機");
+  await pantryShot(catcher, "stool-seated", pantryView);
+  await catcher.keyboard.press("e");
+  await catcher.waitForFunction(() => !window.office.seat);
+
+  // A cookie from the lounge cabinet, carried to the pantry door and tossed to a coworker.
+  const cabinet = await barista.evaluate(() => window.office.snackSpot("snackcab"));
+  await walkTo(barista, cabinet.standX, cabinet.standY);
+  await takeSnack(barista, "cookie");
+  await barista.waitForFunction(() => window.office.snackCarry === "cookie");
+  await walkTo(barista, 768, 860);
+  await barista.waitForFunction(() => window.office.pantry.targets.includes("catcher"));
+  await barista.locator("#hint", { hasText: "按 G 把零食丟給同事" }).waitFor();
+  await barista.keyboard.press("g");
+  await barista.waitForFunction(() => window.office.pantry.open === "toss");
+  await pantryShot(barista, "toss-pick");
+  await barista.locator('#pantry-panel [data-to="catcher"]').click();
+  for (const page of [barista, catcher]) {
+    await page.waitForFunction(() => window.office.snackCarryOf("catcher") === "cookie" && window.office.snackCarryOf("barista") === "");
+  }
+  await catcher.waitForFunction(() => window.office.snackCarry === "cookie" && window.office.pantry.flying === 0);
+
+  // A hot cocoa from the coffee machine steams, and everyone sees the steam.
+  await openAppliance(catcher, "coffee", 880, 944);
+  await pantryShot(catcher, "coffee-panel");
+  await catcher.locator('#pantry-panel [data-item="cocoa"]').click();
+  await catcher.waitForFunction(() => window.office.snackCarry === "cocoa");
+  await barista.waitForFunction(() => window.office.snackCarryOf("catcher") === "cocoa");
+  for (const page of [barista, catcher]) await page.waitForFunction(() => window.office.pantry.steam > 0);
+  await catcher.keyboard.press("Escape");
+  await catcher.waitForFunction(() => !window.office.pantry.open);
+  await pantryShot(catcher, "cocoa-steam", { yaw: 4.8, dist: 150, pitch: 0.4 });
+  // Hot things stay in hand.
+  assert((await catcher.evaluate(pantryOf)).targets.length === 0, "熱飲不該能丟");
+
+  // The microwave: heat a bun, wait for the ding, then take it out.
+  await openAppliance(catcher, "oven", 880, 852);
+  await catcher.locator("#pantry-heat").click();
+  await barista.waitForFunction(() => window.office.pantry.oven?.by === "catcher");
+  const unloadWaits = await catcher.evaluate(() => {
+    const oven = window.office.pantry.oven;
+    return Boolean(oven && (oven.done || document.querySelector("#pantry-unload")?.disabled));
+  });
+  assert(unloadWaits, "包子還沒熱好不該能拿出來");
+  await catcher.waitForFunction(() => window.office.pantry.oven?.done && window.office.pantry.ding);
+  await catcher.locator("#pantry-panel .pantry-ding").waitFor();
+  await pantryShot(catcher, "microwave-ding", { yaw: -1.2, dist: 220, pitch: 0.6 });
+  await catcher.locator("#pantry-unload:not([disabled])").click();
+  await catcher.waitForFunction(() => window.office.snackCarry === "bun" && !window.office.pantry.oven);
+  await barista.waitForFunction(() => window.office.snackCarryOf("catcher") === "bun" && !window.office.pantry.oven);
+  await catcher.keyboard.press("Escape");
+
+  // Fridge notes: stick one, everyone sees it, a fresh page still has it, and peeling asks first.
+  await openAppliance(catcher, "fridge", 876, 912);
+  await catcher.locator("#fridge-text").fill("布丁是小八的");
+  await catcher.locator('#pantry-panel .fridge-tints button[aria-label="粉紅色"]').click();
+  await catcher.locator("#fridge-stick").click();
+  for (const page of [barista, catcher]) {
+    await page.waitForFunction(() => window.office.pantry.notes.some((note) => note.text === "布丁是小八的" && note.tint === 1 && note.by === "catcher"));
+    await page.waitForFunction(() => window.office.pantry.noteMeshes >= 1);
+  }
+  await pantryShot(catcher, "fridge-panel");
+  await catcher.locator("#pantry-close").click();
+  await walkTo(catcher, 880, 1004);
+  await pantryShot(catcher, "fridge-notes-3d", { yaw: 4.8, dist: 220, pitch: 0.45 });
+  await walkTo(catcher, 876, 912);
+  await barista.reload();
+  await barista.waitForFunction(() => window.office.pantry?.notes.some((note) => note.text === "布丁是小八的"));
+  await catcher.keyboard.press("e");
+  await catcher.waitForFunction(() => window.office.pantry.open === "fridge");
+  const card = catcher.locator("#pantry-panel .fridge-note", { hasText: "布丁是小八的" });
+  await card.locator("button.peel").click();
+  await catcher.locator("#fridge-peel-yes").waitFor();
+  await catcher.locator("#fridge-peel-no").click();
+  await catcher.locator("#fridge-peel-yes").waitFor({ state: "detached" });
+  assert((await catcher.evaluate(pantryOf)).notes.length === 1, "按先不要不該撕掉便利貼");
+  await card.locator("button.peel").click();
+  await pantryShot(catcher, "fridge-peel-ask");
+  await catcher.locator("#fridge-peel-yes").click();
+  for (const page of [barista, catcher]) await page.waitForFunction(() => window.office.pantry.notes.length === 0);
+  await catcher.locator("#pantry-close").click();
+
+  // Phone: the actions bar offers the fridge, and the panel's buttons are big enough.
+  await catcher.setViewportSize({ width: 390, height: 844 });
+  await catcher.getByRole("button", { name: "冰箱便利貼" }).click();
+  await catcher.waitForFunction(() => window.office.pantry.open === "fridge");
+  await catcher.locator("#fridge-text").fill("手機也能貼");
+  await catcher.locator("#fridge-stick").click();
+  await catcher.locator("#pantry-panel .fridge-note", { hasText: "手機也能貼" }).waitFor();
+  const sizes = await catcher.locator("#pantry-panel button").evaluateAll((nodes) => nodes.map((node) => {
+    const box = node.getBoundingClientRect();
+    return [node.textContent || node.getAttribute("aria-label"), Math.round(box.width), Math.round(box.height)];
+  }));
+  assert(sizes.every(([, w, h]) => w >= 44 && h >= 44), `手機上茶水間按鈕要夠大 ${JSON.stringify(sizes)}`);
+  const panelBox = await catcher.locator("#pantry-panel").boundingBox();
+  assert(panelBox && panelBox.x >= 0 && panelBox.x + panelBox.width <= 390 && panelBox.y >= 0 && panelBox.y + panelBox.height <= 844, "手機上茶水間面板超出畫面");
+  const hits = await overlaps(catcher, ["#pantry-panel", "#topbar"]);
+  assert(hits.length === 0, `手機上茶水間面板不該蓋到上方列 ${hits.join(" ")}`);
+  await pantryShot(catcher, "phone-fridge");
+  await catcher.locator("#pantry-close").click();
+
+  for (const context of [baristaContext, catcherContext]) await context.close();
+}
+
 // Close-up around a spot in the meeting room, plus the whole view.
 async function meetingShot(page, name, spot, view) {
   const dir = process.env.MEETING_SHOTS;
@@ -3599,6 +3756,15 @@ async function main() {
       }
       return;
     }
+    if (process.argv.includes("--pantry")) {
+      try {
+        await pantryRoom(browser);
+        console.log("pantry ok");
+      } finally {
+        publishShots();
+      }
+      return;
+    }
     if (process.argv.includes("--toys")) {
       try {
         await toyRoom(browser);
@@ -3611,7 +3777,7 @@ async function main() {
       // CI runs the three parts side by side (--part=1, 2, 3), each on its own server;
       // without --part they all run here in order. Each part keeps the original order.
       const parts = [
-        [snackLounge, toyRoom, removedDeviceCanRegister, phoneCamera, coreOffice],
+        [snackLounge, toyRoom, removedDeviceCanRegister, phoneCamera, coreOffice, pantryRoom],
         [chatModeAndCamera, seatedCamera, guestOffice, chairHome, sofaAndUnstuck, reviewFixes],
         [restrooms, deskMonitors, meetingRoom],
       ];

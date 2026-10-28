@@ -25,10 +25,10 @@ import {
   WHISPER_FAR,
   WS_MAX_CHARS,
 } from "./room-base";
-import { RoomMeeting } from "./room-meeting";
+import { RoomPantry } from "./room-pantry";
 export { bearer, type Env } from "./room-base";
 
-export class OfficeRoom extends RoomMeeting implements DurableObject {
+export class OfficeRoom extends RoomPantry implements DurableObject {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
@@ -111,6 +111,7 @@ export class OfficeRoom extends RoomMeeting implements DurableObject {
     else if (kind === "stall") this.onStall(ws, att, body);
     else if (kind === "toy") this.onToy(ws, att, body);
     else if (kind === "meeting") this.onMeeting(ws, att, body);
+    else if (kind === "pantry") this.onPantry(ws, att, body);
     else if (kind === "reset") this.onReset(ws, att);
     this.settleHand(att);
   }
@@ -130,6 +131,7 @@ export class OfficeRoom extends RoomMeeting implements DurableObject {
     }
     this.dropWhisper(att, ws);
     this.settleHand(att, true);
+    this.settlePantry(att);
     this.persist(att);
     this.broadcast({ t: "leave", id: att.id });
     if (this.ctx.getWebSockets().every((socket) => socket === ws)) this.resetChairs(true);
@@ -220,6 +222,7 @@ export class OfficeRoom extends RoomMeeting implements DurableObject {
       doors: this.stalls.view(),
       toys: this.toys.view((id) => id === member.id || this.ctx.getWebSockets(id).some((ws) => this.attOf(ws))),
       meeting: this.meetingView(),
+      pantry: this.pantryView(),
     });
     this.broadcast({ t: "join", player: this.player(att) }, server);
     const held = this.snacks.handsView((id) => id === member.id)[0];

@@ -13,7 +13,7 @@ import esbuild from "esbuild";
 function readSources(files) {
   return files.map((file) => readFileSync(join(import.meta.dirname, "..", file), "utf8")).join("\n");
 }
-const ROOM_FILES = ["base", "login", "admin", "scores", "seats", "toys", "snacks", "whisper", "furniture", "meeting"]
+const ROOM_FILES = ["base", "login", "admin", "scores", "seats", "toys", "snacks", "whisper", "furniture", "meeting", "pantry"]
   .map((name) => `src/room-${name}.ts`)
   .concat("src/office-room.ts");
 const CLIENT_FILES = [
@@ -1296,7 +1296,8 @@ test("toys: the rack is fixed furniture in the game room and the client lists ev
   for (const prop of office.props.filter((item) => item.solid)) assert.equal(overlap({ x: rack.x, y: rack.y, w: size.w, h: size.h }, prop), false, prop.kind);
   const source = roomSource();
   assert.match(source, /isFixedId\(id\) \|\| id === TOY_RACK_ID/);
-  assert.match(source, /isFixedKind\(kind\) \|\| kind === "toyrack"/);
+  assert.match(source, /if \(FURNITURE\[kind\]\?\.fixed\)/);
+  assert.equal(content.FURNITURE.toyrack.fixed, true);
   const client = readFileSync(join(import.meta.dirname, "../public/office/toys.js"), "utf8");
   for (const item of toys.TOY_ITEMS) assert.match(client, new RegExp(`id: "${item.id}"`));
   const furnish = readFileSync(join(import.meta.dirname, "../public/office/furnish.js"), "utf8");
@@ -1736,7 +1737,7 @@ test("gym and pantry decor uses real models that exist, fit their rooms and leav
     assert.ok(inGym.some((item) => item.model === model), model);
   }
   assert.equal(inGym.filter((item) => item.model === "gym-treadmill").length, 2);
-  for (const model of ["kitchenSink", "kitchenCabinetUpper", "kitchenFridge", "kitchenMicrowave", "kitchen-toaster", "kitchen-kettle", "kitchen-mug", "kitchen-dishrack", "tableRound", "stoolBar", "rugRectangle", "trashcan", "pottedPlant", "bookcaseOpenLow"]) {
+  for (const model of ["kitchenSink", "kitchenCabinetUpper", "kitchenFridge", "kitchenMicrowave", "kitchen-toaster", "kitchen-kettle", "kitchen-mug", "kitchen-dishrack", "tableRound", "rugRectangle", "trashcan", "pottedPlant", "bookcaseOpenLow"]) {
     assert.ok(decor.some((item) => item.model === model), model);
   }
   // Every open floor tile in the new rooms is reachable from spawn (stall insides sit behind closed doors).
@@ -2344,7 +2345,8 @@ test("meeting room keeps a small whiteboard, the big screen, hands and one vote 
 
 test("meeting tools are wired in: room chat stays in the room and hands drop on the way out", () => {
   const room = roomSource();
-  assert.match(room, /class OfficeRoom extends RoomMeeting/);
+  assert.match(room, /class OfficeRoom extends RoomPantry/);
+  assert.match(room, /class RoomPantry extends RoomMeeting/);
   assert.match(room, /class RoomMeeting extends RoomFurniture/);
   assert.match(room, /kind === "meeting"\) this\.onMeeting/);
   assert.match(room, /if \(this\.roomChat\(att, text, now\)\) return;/);
@@ -2361,4 +2363,125 @@ test("meeting tools are wired in: room chat stays in the room and hands drop on 
   assert.match(worldSource(), /prop\.kind === "screen"/);
   // The meeting room gets no new storage table: everything sits in the meta row.
   assert.ok(!/meeting/i.test(readFileSync(join(import.meta.dirname, "../src/migrations.ts"), "utf8")));
+});
+
+test("pantry stools are fixed seats around the table, and no seats appear in the gym or game room", () => {
+  const office = content.buildOffice();
+  const zone = (id) => office.zones.find((item) => item.id === id);
+  const inside = (item, z) => item.x >= z.x * 32 && item.y >= z.y * 32 && item.x < (z.x + z.w) * 32 && item.y < (z.y + z.h) * 32;
+  const stools = office.furniture.filter((item) => item.kind === "stool");
+  assert.deepEqual(stools.map((item) => item.id).sort(), ["pantry-stool-e", "pantry-stool-n", "pantry-stool-s", "pantry-stool-w"]);
+  for (const stool of stools) {
+    assert.ok(inside(stool, zone("pantry")), stool.id);
+    assert.equal(content.furnitureFits(office.walls, "stool", stool.x, stool.y, stool.rot), true);
+  }
+  assert.equal(content.FURNITURE.stool.fixed, true);
+  assert.equal(content.isSeatKind("stool"), true);
+  assert.equal(content.isSeatKind("chair"), true);
+  assert.equal(content.isSeatKind("sofa"), false);
+  // The stools used to be scenery; now they are only furniture, so nobody sits on a picture of a stool.
+  assert.equal(office.props.some((item) => item.model === "stoolBar"), false);
+  for (const id of ["gym", "game"]) {
+    assert.equal(office.furniture.some((item) => content.isSeatKind(item.kind) && inside(item, zone(id))), false, id);
+  }
+  const furnish = readFileSync(join(import.meta.dirname, "../public/office/furnish.js"), "utf8");
+  const license = readFileSync(join(import.meta.dirname, "../public/office/assets/kenney/LICENSE.txt"), "utf8");
+  assert.match(furnish, /"stoolBar"/);
+  assert.ok(license.includes("stoolBar.glb"));
+  const room = roomSource();
+  assert.match(room, /chair\.kind !== "chair"\) return;/);
+  assert.match(room, /if \(!isSeatKind\(row\.kind\)\) continue;/);
+  // Stepping off a stool never lands inside the table or the counter.
+  assert.match(room, /const solids = chair\.kind === "chair" \? null : this\.solidFurniture\(\);/);
+  assert.match(room, /!this\.inWall\(x, y\) && !blocked\(x, y\)/);
+  const client = clientSource();
+  assert.match(client, /if \(item\.kind === "stool"\) \{\n    state\.ride = \{ vx: 0, vy: 0 \};\n    return;/);
+});
+
+test("pantry keeps a few fridge notes, one microwave and hot treats that are never out of stock", async () => {
+  const serverFile = join(outdir, "pantry-server.mjs");
+  await esbuild.build({ entryPoints: [join(import.meta.dirname, "../src/pantry.ts")], bundle: true, format: "esm", platform: "neutral", outfile: serverFile });
+  const pantry = await import(pathToFileURL(serverFile).href);
+  const room = new pantry.PantryRoom();
+  room.load(null);
+  assert.equal(room.stick("a", "   ", 0), null);
+  const first = room.stick("a", "記得買牛奶".repeat(9), 9);
+  assert.equal([...first.text].length, pantry.FRIDGE_CHARS);
+  assert.equal(first.tint, 0);
+  for (let i = 0; i < pantry.FRIDGE_NOTES + 2; i++) room.stick("b", `便利貼 ${i}`, 2);
+  assert.equal(room.notes.length, pantry.FRIDGE_NOTES);
+  assert.equal(room.notes.some((note) => note.id === first.id), false);
+  const last = room.notes.at(-1);
+  assert.equal(room.peel(last.id), true);
+  assert.equal(room.peel(last.id), false);
+  // Saved notes come back trimmed and checked, and new ids never repeat an old one.
+  const again = new pantry.PantryRoom();
+  again.load(JSON.stringify({ ...JSON.parse(room.save()), notes: [{ id: "x", text: "", by: "c" }, ...room.notes] }));
+  assert.deepEqual(again.notes, room.notes);
+  const fresh = again.stick("c", "新的", 1);
+  assert.equal(again.notes.filter((note) => note.id === fresh.id).length, 1);
+  again.load("{bad");
+  assert.deepEqual(again.notes, []);
+  // The microwave: one bun at a time, ready only after the wait, and it frees up if nobody comes back.
+  assert.equal(room.heat("a", 1000), null);
+  assert.match(room.heat("b", 1100), /有人在用/);
+  assert.match(room.heat("a", 1100), /你的包子/);
+  assert.match(room.unload("a", 1000 + pantry.HEAT_MS - 1), /還沒好/);
+  assert.match(room.unload("b", 1000 + pantry.HEAT_MS), /沒有你的/);
+  assert.equal(room.ovenView(1000).left, pantry.HEAT_MS);
+  assert.equal(room.unload("a", 1000 + pantry.HEAT_MS), null);
+  assert.equal(room.ovenView(5000), null);
+  assert.equal(room.heat("b", 9000), null);
+  assert.equal(room.heat("a", 9000 + pantry.HEAT_MS + pantry.OVEN_KEEP_MS), null);
+  assert.equal(room.forget("b"), false);
+  assert.equal(room.forget("a"), true);
+  assert.equal(room.oven, null);
+  assert.ok(!/oven|heat/i.test(room.save()));
+  // Hot treats go straight into hands; the cabinet and vending machine counts never include them.
+  const snack = new snacks.SnackRoom();
+  for (const id of pantry.HOT_DRINKS) assert.equal(snacks.snackItem(id).hot, true);
+  assert.equal(snacks.snackItem(pantry.OVEN_ITEM).hot, true);
+  assert.equal("hotcoffee" in snack.view(), false);
+  assert.equal(snack.take("a", "hotcoffee", 0, 0, () => ({ x: 0, y: 0 }), 0).reason, "unknown");
+  assert.equal(snack.give("a", "cookie"), false);
+  assert.equal(snack.give("a", "cocoa"), true);
+  assert.equal(snack.hand("a"), "cocoa");
+  assert.equal(snack.pass("a", "a"), "");
+  snack.give("b", "bun");
+  assert.equal(snack.pass("a", "b"), "");
+  assert.equal(snack.pass("a", "c"), "cocoa");
+  assert.equal(snack.hand("a"), "");
+  assert.equal(snack.hand("c"), "cocoa");
+  assert.equal(snack.handsView().find((row) => row.id === "c").pose, "drink");
+  const office = content.buildOffice();
+  for (const model of ["kitchenMicrowave", "kitchenFridge"]) {
+    const at = pantry.propAnchor(office.props, model);
+    assert.ok(at && pantry.inPantry(at.x, at.y, office.zones), model);
+  }
+});
+
+test("pantry is wired in like the other rooms and keeps everything in the meta row", () => {
+  const room = roomSource();
+  assert.match(room, /kind === "pantry"\) this\.onPantry/);
+  assert.match(room, /pantry: this\.pantryView\(\)/);
+  assert.match(room, /this\.settlePantry\(att\)/);
+  assert.match(room, /if \(!inPantry\(att\.x, att\.y, this\.map\.zones\)\) return this\.pantryError/);
+  assert.match(room, /if \(item\.hot\) return this\.pantryError/);
+  assert.ok(!/PANTRY_META|"pantry"|stool/.test(readFileSync(join(import.meta.dirname, "../src/migrations.ts"), "utf8")));
+  const client = clientSource();
+  assert.match(client, /pantry\.onNet\(message\)/);
+  assert.match(client, /attachPantry\(/);
+  assert.match(client, /pantry\.isOpen\(\)\) return \[\];/);
+  const pantryClient = readFileSync(join(import.meta.dirname, "../public/office/pantry.js"), "utf8");
+  // Feature files only declare things; nothing runs when the file loads.
+  for (const lineText of pantryClient.split("\n")) {
+    if (!lineText || lineText.startsWith(" ") || lineText.startsWith("}") || lineText.startsWith("//")) continue;
+    assert.match(lineText, /^(import |export function |const |function )/, lineText);
+  }
+  // Removing a sticky note asks first, with no timer.
+  assert.match(pantryClient, /確定撕掉/);
+  assert.match(pantryClient, /先不要/);
+  const css = readFileSync(join(import.meta.dirname, "../public/office/office.css"), "utf8");
+  assert.match(css, /#pantry-panel button \{ min-height: var\(--btn-h-lg\)/);
+  assert.match(css, /button\.tint \{ width: 44px; min-width: 44px; min-height: 44px;/);
 });

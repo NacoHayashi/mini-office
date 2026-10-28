@@ -1,7 +1,7 @@
 // Using things nearby: chairs, the mirror, the arcade, the board, and taps.
 import { openArcade, openBoard } from "./arcade.js";
 import { hitFurniture } from "./edit-mode.js";
-import { snacks, stalls, toys } from "./game.js";
+import { pantry, snacks, stalls, toys } from "./game.js";
 import { showAvatar } from "./look-editor.js";
 import { bodyRadius, collides, findPath, freeSpot, inRestroom, nearLala, noteBump, resolveBodies, seatApproach } from "./movement.js";
 import { send, sendMove } from "./net.js";
@@ -15,7 +15,13 @@ function standPoint(prop) {
   return freeSpot(prop.x + prop.w / 2, prop.y + prop.h + 18);
 }
 
+// Office chairs roll; pantry stools are seats that stay put.
+export function isSeat(item) {
+  return item?.kind === "chair" || item?.kind === "stool";
+}
+
 function chairCenter(item) {
+  if (item.kind === "stool") return { x: item.x + 8, y: item.y + 8 };
   return { x: item.x + 16, y: item.y + 13 };
 }
 
@@ -23,7 +29,7 @@ export function nearestChair() {
   if (!state.me || state.seat) return null;
   let best = null;
   for (const item of state.furniture) {
-    if (item.kind !== "chair" || item.seat) continue;
+    if (!isSeat(item) || item.seat) continue;
     const center = chairCenter(item);
     const dist = Math.hypot(state.me.x - center.x, state.me.y - center.y);
     if (dist < 78 && (!best || dist < best.dist)) best = { item, dist, ...center };
@@ -43,6 +49,10 @@ export function rideStep(dt, wishX, wishY) {
   if (!item) {
     state.seat = null;
     if (state.me) state.me.seat = null;
+    return;
+  }
+  if (item.kind === "stool") {
+    state.ride = { vx: 0, vy: 0 };
     return;
   }
   let { vx, vy } = state.ride;
@@ -125,7 +135,7 @@ function standUp() {
   state.ride = { vx: 0, vy: 0 };
   state.rideWish = null;
   state.rising = true;
-  if (item) {
+  if (item && item.kind === "chair") {
     item.speed = 0;
     state.sentX = item.x;
     state.sentY = item.y;
@@ -140,6 +150,7 @@ export function interact() {
   if (!state.me || state.editing || state.help || state.arcade || state.boardOpen || !$("avatar").hidden) return;
   if (snacks.dismiss()) return;
   if (toys.dismiss()) return;
+  if (pantry.interact(state.seat ? -1 : nearestChair()?.dist)) return;
   const blockBite = nearLala() || (!state.seat && (nearestChair() || nearestUse() || stalls.nearest()));
   if (snacks.carrying() && !blockBite) {
     snacks.nibble();
@@ -194,7 +205,7 @@ export function walkOrUse(point) {
   if (snacks.walk(point)) return;
   if (toys.walk(point)) return;
   const furn = hitFurniture(point.x, point.y);
-  if (furn?.kind === "chair") {
+  if (isSeat(furn)) {
     const center = chairCenter(furn);
     if (nearestChair()?.item.id === furn.id) interact();
     else state.path = findPath(freeSpot(center.x, center.y + 36).x, freeSpot(center.x, center.y + 36).y);
