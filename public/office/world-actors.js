@@ -4,6 +4,9 @@ import { CREATURE, SHADOW_Y } from "./avatar.js";
 import { lalaHeading } from "./lala.js";
 import { FALLBACK_LOOK, LALA_LOOK, bodyRadius } from "./world3d.js";
 
+// Pantry bar stools sit higher than office chairs.
+const STOOL_HOP = 19;
+
 export function createActors(ctx) {
   const {
     actorGroup,
@@ -214,7 +217,8 @@ export function createActors(ctx) {
       }
       const stride = actor.userData.stride ?? 0;
       actor.userData.stride = stride + ((person.moving && !person.seat ? 1 : 0) - stride) * (1 - Math.exp(-12 * Math.max(0.001, dt)));
-      const hop = person.seat ? 11 : Math.abs(Math.sin(time * 11)) * 3.5 * actor.userData.stride;
+      const perch = person.seat && (state.furniture || []).find((item) => item.id === person.seat)?.kind === "stool";
+      const hop = person.seat ? (perch ? STOOL_HOP : 11) : Math.abs(Math.sin(time * 11)) * 3.5 * actor.userData.stride;
       const radius = bodyRadius(person.look);
       const pinned = person.id === state.me?.id;
       let rx = pinned ? person.x : (actor.userData.rx ?? person.x);

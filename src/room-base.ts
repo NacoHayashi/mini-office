@@ -71,6 +71,8 @@ export type Pending = {
 
 export type ChairLive = {
   id: string;
+  /** "chair" rolls around; "stool" is fixed in place. */
+  kind: string;
   x: number;
   y: number;
   rot: number;

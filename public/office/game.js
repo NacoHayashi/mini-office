@@ -1,6 +1,7 @@
 // Office client entry: wires the page, runs the frame loop, and boots the session.
 import { attachMeeting } from "./meeting.js";
 import { attachMonitors } from "./monitors.js";
+import { attachPantry } from "./pantry.js";
 import { attachSnacks } from "./snacks.js";
 import { attachStalls } from "./stalls.js";
 import { attachToys } from "./toys.js";
@@ -33,6 +34,16 @@ export const snacks = attachSnacks({
 export const stalls = attachStalls({ state, world, send });
 export const monitors = attachMonitors({ state, world });
 export const meeting = attachMeeting({ state, world, $, send });
+export const pantry = attachPantry({
+  state,
+  world,
+  $,
+  send,
+  snacks,
+  sizeOf,
+  zoneAt: (...args) => zoneAt(...args),
+  phone: () => phoneQuery.matches,
+});
 export const toys = attachToys({
   state,
   world,
@@ -89,6 +100,10 @@ wireChat();
 
 window.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closePeople();
+  if (event.key === "Escape" && pantry.isOpen()) {
+    pantry.close();
+    return;
+  }
   if (typingTarget(event) || composing || justEnded) return;
   if ((event.key === "t" || event.key === "T") && !event.ctrlKey && !event.metaKey && !event.altKey && openChat()) {
     event.preventDefault();
@@ -102,6 +117,7 @@ window.addEventListener("keydown", (event) => {
   state.keys.add(event.key.toLowerCase());
   if (event.key === "e" || event.key === "E") interact();
   if ((event.key === "q" || event.key === "Q") && !event.repeat && state.me && !state.editing) toys.drop();
+  if ((event.key === "g" || event.key === "G") && !event.repeat && state.me && !state.editing) pantry.openToss();
   if ((event.key === "1" || event.key === "2") && !event.repeat && state.me && !state.editing && !event.ctrlKey && !event.metaKey && !event.altKey) toys.key(event.key, true);
   if (event.key === "v" || event.key === "V") {
     world.toggle();
@@ -322,6 +338,7 @@ function update(dt) {
   }
   const meetingBlocked = Boolean(state.editing || state.help || state.arcade || state.boardOpen || !$("avatar").hidden);
   if (meeting.frame(meetingBlocked)) paintChatTip();
+  pantry.frame(dt, meetingBlocked || !$("dialogue").hidden);
   const zone = zoneAt(state.me.x, state.me.y);
   const name = zone?.name || "辦公室";
   if (name !== state.zoneName) {
@@ -339,7 +356,8 @@ function update(dt) {
     else if (state.whisper) setHint("按 F 離開悄悄話");
     else if (near?.grouped) setHint(`按 F 想加入 @${near.id} 的悄悄話`);
     else if (near) setHint(`按 F 跟 @${near.id} 說悄悄話`);
-    else if (snacks.isOpen() || toys.isOpen()) setHint("");
+    else if (snacks.isOpen() || toys.isOpen() || pantry.isOpen()) setHint("");
+    else if (pantry.prompt(state.seat ? -1 : nearestChair()?.dist)) setHint(pantry.prompt(state.seat ? -1 : nearestChair()?.dist));
     else if (!snacks.carrying() && snacks.prompt()) setHint(snacks.prompt());
     else if (state.seat) setHint(snacks.carrying() ? snacks.prompt() : "按 E 起立");
     else if (nearestChair()) setHint("按 E 坐下");

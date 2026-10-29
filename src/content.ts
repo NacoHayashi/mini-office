@@ -63,7 +63,13 @@ export const FURNITURE: Record<string, { w: number; h: number; solid: boolean; l
   snackcab: { w: 40, h: 32, solid: true, label: "零食櫃", fixed: true },
   vendor: { w: 32, h: 30, solid: true, label: "販賣機", fixed: true },
   toyrack: { w: 48, h: 28, solid: true, label: "玩具架", fixed: true },
+  stool: { w: 16, h: 16, solid: true, label: "高腳椅", fixed: true },
 };
+
+/** Furniture people can sit on. Office chairs roll; pantry stools stay put. */
+export function isSeatKind(kind: unknown): boolean {
+  return kind === "chair" || kind === "stool";
+}
 
 const RESERVED = new Set(["lala", "admin", "system", "npc", "office"]);
 
@@ -1022,6 +1028,11 @@ export function buildOffice(): OfficeMap {
     { id: "meet-chair-w", kind: "chair", x: 536, y: 120, rot: 0 },
     { id: "meet-chair-e", kind: "chair", x: 776, y: 120, rot: 0 },
     { id: "bin-1", kind: "bin", x: 37 * TILE + 6, y: 22 * TILE, rot: 0 },
+    // Bar stools around the pantry's round table, each facing the table.
+    { id: "pantry-stool-n", kind: "stool", x: 790, y: 894, rot: 0 },
+    { id: "pantry-stool-w", kind: "stool", x: 750, y: 934, rot: 90 },
+    { id: "pantry-stool-e", kind: "stool", x: 830, y: 934, rot: 270 },
+    { id: "pantry-stool-s", kind: "stool", x: 790, y: 974, rot: 180 },
   );
 
   const lala = { x: 224, y: 116, name: "Lala 小姐", title: "櫃檯" };

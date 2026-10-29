@@ -2,7 +2,7 @@
 import { createRequests } from "./requests.js";
 import { closeArcade, closeBoard, refreshBoard } from "./arcade.js";
 import { buildPalette, clearArmed, clearPendingAdd, paintTools, pendingAdd, setEditing } from "./edit-mode.js";
-import { ensureLoop, meeting, resize, snacks, stalls, toys } from "./game.js";
+import { ensureLoop, meeting, pantry, resize, snacks, stalls, toys } from "./game.js";
 import { loginOptions, showElsewhere, stopParkWatch } from "./login.js";
 import { showAvatar } from "./look-editor.js";
 import { $, setHint, state, world } from "./office-state.js";
@@ -58,6 +58,7 @@ export function showGate(message, options = {}) {
   snacks.close();
   toys.close();
   meeting.close();
+  pantry.close();
   closeArcade();
   closeBoard();
   $("form-password").hidden = false;
@@ -198,6 +199,7 @@ export function onNet(message) {
   stalls.onNet(message);
   toys.onNet(message);
   meeting.onNet(message);
+  pantry.onNet(message);
   if (message.t === "welcome") {
     state.map = message.map;
     state.furniture = message.furniture || [];
@@ -498,7 +500,7 @@ export function sendMove(force = false) {
   if (!force && now - state.sentAt < 90) return;
   if (state.seat) {
     const item = state.furniture.find((entry) => entry.id === state.seat);
-    if (!item) return;
+    if (!item || item.kind !== "chair") return;
     if (!force && Math.hypot(item.x - state.sentX, item.y - state.sentY) < 0.6 && Math.hypot(state.ride.vx, state.ride.vy) < 8) {
       state.dirty = false;
       return;

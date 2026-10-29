@@ -150,7 +150,7 @@ h1, h2 { margin: 0 0 8px; }
     #fff6fb;
 }
 
-#topbar, #online, #hint, #dialogue, #snack-menu, #editbar, #chatbar, #help, #avatar, #gate, #board {
+#topbar, #online, #hint, #dialogue, #snack-menu, #pantry-panel, #editbar, #chatbar, #help, #avatar, #gate, #board {
   position: fixed;
   z-index: 3;
 }
@@ -464,6 +464,56 @@ h1, h2 { margin: 0 0 8px; }
   gap: 8px;
   text-align: left;
 }
+#pantry-panel {
+  left: 50%;
+  bottom: 112px;
+  transform: translateX(-50%);
+  width: min(420px, calc(100% - 24px));
+  max-height: calc(100% - 180px);
+  overflow-y: auto;
+  background: var(--card);
+  border-radius: var(--r-lg);
+  padding: 14px;
+  box-shadow: var(--shadow);
+  z-index: 5;
+}
+#pantry-panel .pantry-line { margin: 8px 0; color: var(--muted); font-weight: 700; }
+#pantry-panel .pantry-ding { color: #f07a9c; font-size: 20px; }
+#pantry-panel .pantry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+#pantry-panel button { min-height: var(--btn-h-lg); }
+#pantry-panel button.item {
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  padding: var(--pad-default);
+  text-align: left;
+}
+#pantry-panel button.big { width: 100%; margin: 6px 0 10px; }
+#pantry-panel .pantry-bar { height: 12px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 6px 0 10px; }
+#pantry-panel .pantry-bar span { display: block; height: 100%; width: 0; background: #ffd27a; border-radius: inherit; animation: pantry-fill linear forwards; }
+@keyframes pantry-fill { to { width: 100%; } }
+#pantry-panel .fridge-notes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
+#pantry-panel .fridge-note {
+  border-radius: var(--r-md);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--ink);
+  box-shadow: 0 2px 6px rgba(91, 74, 107, 0.12);
+}
+#pantry-panel .fridge-note .text { font-weight: 800; word-break: break-word; }
+#pantry-panel .fridge-note small { color: var(--muted); font-weight: 700; }
+#pantry-panel .fridge-note button { align-self: flex-end; min-width: 64px; }
+#pantry-panel .fridge-ask { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#pantry-panel .fridge-ask p { margin: 0; flex-basis: 100%; font-weight: 800; }
+#pantry-panel .fridge-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#pantry-panel .fridge-form input { flex: 1 1 100%; min-height: var(--btn-h-lg); font-size: 16px; }
+#pantry-panel .fridge-tints { display: flex; gap: 8px; flex: 1 1 auto; }
+#pantry-panel .fridge-tints button.tint { width: 44px; min-width: 44px; min-height: 44px; border-radius: 50%; border: 3px solid transparent; padding: 0; }
+#pantry-panel .fridge-tints button.tint[aria-pressed="true"] { border-color: var(--ink); }
+#pantry-panel .fridge-form button.big { width: auto; flex: 0 0 auto; margin: 0; padding: 0 22px; }
 #snack-menu button.item small { color: var(--muted); font-weight: 700; }
 #snack-menu .count { color: var(--muted); font-weight: 800; white-space: nowrap; }
 #btn-restock { white-space: normal; text-align: center; }
@@ -920,6 +970,13 @@ body:has(#near-menu:not([hidden])) #whisper-asks { bottom: 172px; }
     bottom: auto;
     max-width: calc(100% - 24px);
   }
+  #pantry-panel {
+    bottom: calc(12px + var(--kb, 0px) + env(safe-area-inset-bottom));
+    width: min(420px, calc(100% - 16px));
+    max-height: calc(100% - 16px - var(--kb, 0px) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+  #pantry-panel button { min-height: var(--btn-h-lg); padding: var(--pad-large); font-size: 16px; }
+  #pantry-panel .fridge-tints button.tint { padding: 0; }
   #snack-menu {
     bottom: calc(12px + env(safe-area-inset-bottom));
     width: min(420px, calc(100% - 16px));

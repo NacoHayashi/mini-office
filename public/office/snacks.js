@@ -13,9 +13,19 @@ const ITEMS = [
   { id: "soda", label: "汽水", machine: "vendor", pose: "drink", tint: 0xf08aab },
   { id: "juice", label: "果汁", machine: "vendor", pose: "drink", tint: 0xffb067 },
   { id: "latte", label: "咖啡牛奶", machine: "vendor", pose: "drink", tint: 0xf2d7a4 },
+  // Pantry treats: the coffee machine and the microwave never run out, and they come out steaming.
+  { id: "hotcoffee", label: "熱咖啡", machine: "coffee", pose: "drink", tint: 0xfff6ea, top: 0x8a5638, hot: true },
+  { id: "cocoa", label: "熱可可", machine: "coffee", pose: "drink", tint: 0xffd6e4, top: 0xb07a5a, hot: true },
+  { id: "hottea", label: "熱紅茶", machine: "coffee", pose: "drink", tint: 0xd9efff, top: 0xd9894a, hot: true },
+  { id: "bun", label: "熱包子", machine: "microwave", pose: "eat", tint: 0xfffaf2, hot: true },
 ];
 
 const BY_ID = new Map(ITEMS.map((item) => [item.id, item]));
+const STOCKED = ITEMS.filter((item) => item.machine === "snackcab" || item.machine === "vendor");
+
+export function snackInfo(id) {
+  return BY_ID.get(id) || null;
+}
 const gradient = stepGradient([176, 222, 255]);
 
 function toon(color) {
@@ -27,7 +37,7 @@ function smooth(value) {
   return t * t * (3 - 2 * t);
 }
 
-function makeHeld(item) {
+export function makeHeld(item) {
   const group = new THREE.Group();
   const color = toon(item.tint);
   if (item.pose === "drink") {
@@ -48,7 +58,7 @@ function makeHeld(item) {
       handle.position.set(2.15, 0.1, 0);
       group.add(handle);
     }
-    const top = new THREE.Mesh(new THREE.CircleGeometry(can ? 1.45 : 1.7, 16), toon(item.id === "tea" ? 0xc6e27a : 0xfff6ea));
+    const top = new THREE.Mesh(new THREE.CircleGeometry(can ? 1.45 : 1.7, 16), toon(item.top ?? (item.id === "tea" ? 0xc6e27a : 0xfff6ea)));
     top.rotation.x = -Math.PI / 2;
     top.position.y = can ? 3.15 : 2.25;
     group.add(top);
@@ -60,6 +70,15 @@ function makeHeld(item) {
     const wrap = new THREE.Mesh(new THREE.SphereGeometry(0.7, 10, 8), toon(0xffe08a));
     wrap.position.set(2.1, 0.2, 0.4);
     group.add(wrap);
+    return group;
+  }
+  if (item.id === "bun") {
+    const bun = new THREE.Mesh(new THREE.SphereGeometry(2.6, 16, 12), color);
+    bun.scale.set(1, 0.72, 1);
+    group.add(bun);
+    const pinch = new THREE.Mesh(new THREE.SphereGeometry(0.7, 10, 8), toon(0xf6e6cf));
+    pinch.position.y = 1.7;
+    group.add(pinch);
     return group;
   }
   if (item.id === "marsh") {
@@ -106,7 +125,7 @@ function showPockets(hidden) {
 
 export function attachSnacks(env) {
   const { state, world, $, send, sizeOf } = env;
-  let stock = Object.fromEntries(ITEMS.map((item) => [item.id, 5]));
+  let stock = Object.fromEntries(STOCKED.map((item) => [item.id, 5]));
   let menu = null;
   let menuKind = "";
   let openedAt = 0;
@@ -120,7 +139,7 @@ export function attachSnacks(env) {
   function applyStock(raw) {
     if (!raw || typeof raw !== "object") return;
     const next = { ...stock };
-    for (const item of ITEMS) {
+    for (const item of STOCKED) {
       const value = raw[item.id];
       if (typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 5) next[item.id] = value;
     }
@@ -131,7 +150,7 @@ export function attachSnacks(env) {
   }
 
   function hasEmpty() {
-    return ITEMS.some((item) => (stock[item.id] || 0) <= 0);
+    return STOCKED.some((item) => (stock[item.id] || 0) <= 0);
   }
 
   function isMachine(kind) {
@@ -557,6 +576,19 @@ export function attachSnacks(env) {
     }
   }
 
+  /** Drops whatever this person holds without a bite, e.g. when it is tossed away. */
+  function drop(id) {
+    const prev = poses.get(id);
+    if (!prev) return;
+    restore(world.actor?.(id), prev);
+    poses.delete(id);
+  }
+
+  /** The mesh in this person's hand, for steam and throws. */
+  function heldProp(id) {
+    return poses.get(id)?.prop || null;
+  }
+
   function carried(id) {
     const pose = poses.get(id || state.me?.id);
     if (!pose || pose.mode !== "carry") return "";
@@ -587,6 +619,9 @@ export function attachSnacks(env) {
     counts,
     spot,
     carried,
+    drop,
+    give: (id, itemId) => startCarry(id, itemId),
+    heldProp,
     phase,
     hold(value) { heldPhase = typeof value === "number" ? value : null; },
   };

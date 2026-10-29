@@ -91,7 +91,7 @@ export function collides(x, y, ignoreId, radius = 11, stallRadius = radius) {
   }
   for (const item of state.furniture) {
     if (item.id === ignoreId) continue;
-    if (item.kind === "chair" && item.seat) continue;
+    if ((item.kind === "chair" || item.kind === "stool") && item.seat) continue;
     const size = sizeOf(item);
     if (size.solid && circleRect(x, y, radius, item.x, item.y, size.w, size.h)) return true;
   }

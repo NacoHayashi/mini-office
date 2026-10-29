@@ -336,6 +336,13 @@ export function createProps(ctx) {
       contactShadow(group, 16, 16);
       return true;
     }
+    if (kind === "stool") {
+      const model = place("stoolBar", 16, 16, { maxHeight: 22, stretch: 1.25 });
+      if (!model) return false;
+      group.add(model);
+      contactShadow(group, 7, 7);
+      return true;
+    }
     if (kind === "plant") {
       const model = place("pottedPlant", 24, 26, { maxHeight: 52 });
       if (!model) return false;
@@ -575,6 +582,10 @@ export function createProps(ctx) {
       group.userData.wheels = wheels;
       group.userData.seatPivot = seat;
       group.userData.wobble = 0;
+    } else if (kind === "stool") {
+      contactShadow(group, 7, 7);
+      addMesh(group, geo("stoolLeg", () => new THREE.CylinderGeometry(1.2, 1.6, 18, 10)), mat(0xe4dcd2), 0, 9, 0);
+      addMesh(group, geo("stoolSeat", () => new THREE.CylinderGeometry(7, 7, 3.4, 16)), mat(0xf2d0a4), 0, 20, 0, { cast: true });
     } else if (kind === "plant" || kind === "cactus") {
       contactShadow(group, 12, 12);
       addMesh(group, geo("pot", () => new THREE.CylinderGeometry(7, 5.5, 10, 10)), mat(0xfff6ea), 0, 6, 0, { cast: true });

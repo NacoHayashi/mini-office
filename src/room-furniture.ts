@@ -1,6 +1,6 @@
 // Furniture edit mode: adding, moving, and removing furniture.
-import { type Furn, furnitureFits, furnitureSize, quarterRot } from "./content";
-import { isFixedId, isFixedKind } from "./snacks";
+import { FURNITURE, type Furn, furnitureFits, furnitureSize, isSeatKind, quarterRot } from "./content";
+import { isFixedId } from "./snacks";
 import { TOY_RACK_ID } from "./toys";
 import { randomToken } from "./crypto";
 import { type Att, FURN_MOVE_MS } from "./room-base";
@@ -46,7 +46,7 @@ export abstract class RoomFurniture extends RoomWhisper {
     let replaced = false;
     if (op === "move" || op === "rot") {
       const id = typeof body.id === "string" ? body.id : "";
-      if (isFixedId(id) || id === TOY_RACK_ID) {
+      if (this.fixedFurniture(id)) {
         this.send(ws, { t: "error", message: "這個設備是固定的", furniture: this.furniture() });
         return;
       }
@@ -94,7 +94,7 @@ export abstract class RoomFurniture extends RoomWhisper {
       changed = { id, kind: String(item.kind), x, y, rot };
     } else if (op === "add") {
       const kind = typeof body.kind === "string" ? body.kind : "";
-      if (isFixedKind(kind) || kind === "toyrack") {
+      if (FURNITURE[kind]?.fixed) {
         this.send(ws, { t: "error", message: "這個設備是固定的", furniture: this.furniture() });
         return;
       }
@@ -121,7 +121,7 @@ export abstract class RoomFurniture extends RoomWhisper {
       changed = { id, kind, x, y, rot };
     } else if (op === "remove") {
       const id = typeof body.id === "string" ? body.id : "";
-      if (isFixedId(id) || id === TOY_RACK_ID) {
+      if (this.fixedFurniture(id)) {
         this.send(ws, { t: "error", message: "這個設備是固定的", furniture: this.furniture() });
         return;
       }
@@ -144,11 +144,18 @@ export abstract class RoomFurniture extends RoomWhisper {
     else if (changed) this.broadcast({ t: "furniture", item: changed });
   }
 
+  /** Machines, the toy rack and the pantry stools never move. */
+  private fixedFurniture(id: string): boolean {
+    if (isFixedId(id) || id === TOY_RACK_ID) return true;
+    const row = this.sql.exec<{ kind: string }>(`SELECT kind FROM furniture WHERE id = ?`, id).toArray()[0];
+    return Boolean(row && FURNITURE[String(row.kind)]?.fixed);
+  }
+
   protected furniture(): Array<Furn & { seat: string | null }> {
     this.ensureChairs();
     return this.sql.exec<Furn>(`SELECT id, kind, x, y, rot FROM furniture`).toArray().map((row) => {
       const id = String(row.id);
-      const chair = row.kind === "chair" ? this.chairs.get(id) : null;
+      const chair = isSeatKind(row.kind) ? this.chairs.get(id) : null;
       return {
         id,
         kind: String(row.kind),
