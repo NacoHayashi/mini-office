@@ -6,7 +6,6 @@ export function createRooms(ctx) {
   const {
     floorGroup,
     mat,
-    ownMaterials,
     patternTexture,
     roundedBox,
     wallGroup,
@@ -185,7 +184,6 @@ export function createRooms(ctx) {
       lip.position.set(0, WALL_H / 2 - 2.1, 0);
       mesh.add(lip);
       mesh.userData.occlude = true;
-      ownMaterials(mesh);
       wallGroup.add(mesh);
       walls.push({
         mesh,

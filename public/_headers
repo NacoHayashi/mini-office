@@ -2,3 +2,10 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: same-origin
   Content-Security-Policy: base-uri 'none'; object-src 'none'; frame-ancestors 'self'
+
+# Versioned by content hash (scripts/stamp-assets.mjs), so they can stay cached.
+/office/vendor/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/office/assets/*
+  Cache-Control: public, max-age=31536000, immutable

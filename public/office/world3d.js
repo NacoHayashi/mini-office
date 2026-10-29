@@ -1,5 +1,5 @@
 import * as THREE from "./vendor/three.module.js";
-import { setOutlineWidth, stepGradient } from "./toon.js";
+import { outlineWidth, setOutlineWidth, stepGradient } from "./toon.js";
 import { createAvatars } from "./avatar.js";
 import { createMaterials } from "./world-materials.js";
 import { createRooms } from "./world-rooms.js";
@@ -8,6 +8,7 @@ import { createLabels } from "./world-labels.js";
 import { createActors } from "./world-actors.js";
 import { createPreview } from "./world-preview.js";
 import { createCamera } from "./world-camera.js";
+import { createRedraw } from "./world-redraw.js";
 
 export const TILE = 32;
 export const WALL_H = 36;
@@ -64,6 +65,7 @@ export function clamp(value, min, max) {
 }
 
 export function createWorld({ view, preview, labels, fallback }) {
+  let phoneMedia = null;
   const world = {
     ok: false,
     previewOk: false,
@@ -111,11 +113,15 @@ export function createWorld({ view, preview, labels, fallback }) {
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = 1;
   renderer.shadowMap.enabled = !world.software;
+  // Shadows are redrawn only when something casting one moved (world-redraw.js).
+  renderer.shadowMap.autoUpdate = false;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.setClearColor(0xf8d0e2, 1);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xf8d0e2);
+  // world-redraw.js updates the matrices once per frame before deciding to draw.
+  scene.matrixWorldAutoUpdate = false;
   scene.fog = new THREE.Fog(0xf6e6d4, 2600, 5600);
   let envMap = null;
   let extrasMod = null;
@@ -207,7 +213,6 @@ export function createWorld({ view, preview, labels, fallback }) {
     geo,
     mat,
     mats,
-    ownMaterials,
     patternTexture,
     roundedBox,
     rugMesh,
@@ -239,7 +244,6 @@ export function createWorld({ view, preview, labels, fallback }) {
   const { buildFloor, buildWalls, textPlane } = createRooms({
     floorGroup,
     mat,
-    ownMaterials,
     patternTexture,
     roundedBox,
     wallGroup,
@@ -260,14 +264,13 @@ export function createWorld({ view, preview, labels, fallback }) {
     doorPivots,
     geo,
     mat,
-    ownMaterials,
     propGroup,
     roundedBox,
     rugMesh,
     smoothSphere,
     textPlane,
   });
-  const { crownWorldY, placeFloater, visibleBubble } = createLabels({ camera, floaters, labels, phoneNow, projected, view });
+  const { beginFrame: beginLabels, crownWorldY, placeFloater, visibleBubble } = createLabels({ camera, floaters, labels, phoneNow, projected, view });
   const {
     animateActor,
     frameToys,
@@ -327,6 +330,7 @@ export function createWorld({ view, preview, labels, fallback }) {
     view,
     world,
   });
+  const redraw = createRedraw({ actorGroup, camera, look, outlineWidth, renderer, scene, sun });
   function showFallback() {
     if (fallback) fallback.hidden = false;
   }
@@ -400,10 +404,13 @@ export function createWorld({ view, preview, labels, fallback }) {
     builtMap = map;
   }
 
+  const liveFurniture = new Set();
   function syncFurniture(state) {
     const specs = state.specs;
     const list = state.furniture || [];
-    const ids = new Set(list.map((item) => item.id));
+    const ids = liveFurniture;
+    ids.clear();
+    for (const item of list) ids.add(item.id);
     for (const [id, mesh] of furnMeshes) {
       if (!ids.has(id)) {
         furnGroup.remove(mesh);
@@ -453,13 +460,25 @@ export function createWorld({ view, preview, labels, fallback }) {
     if (meetingHook) meetingHook(furnMeshes, propGroup);
   }
 
-  function reveal() {
-    const roots = [];
-    for (const group of [wallGroup, propGroup, furnGroup]) {
-      for (const child of group.children) {
-        if (child.userData.occlude) roots.push(child);
-      }
+  // Scratch objects reused every frame by reveal() (no per-frame garbage).
+  const revealRoots = [];
+  const revealFaded = new Set();
+  const revealHits = [];
+  const revealChest = new THREE.Vector3();
+  const revealHead = new THREE.Vector3();
+  const revealRay = new THREE.Vector3();
+  function collectOccluders(group) {
+    for (const child of group.children) {
+      if (child.userData.occlude) revealRoots.push(child);
     }
+  }
+
+  function reveal() {
+    const roots = revealRoots;
+    roots.length = 0;
+    collectOccluders(wallGroup);
+    collectOccluders(propGroup);
+    collectOccluders(furnGroup);
     const camX = camera.position.x;
     const camZ = camera.position.z;
     const toCamX = camX - look.x;
@@ -481,29 +500,36 @@ export function createWorld({ view, preview, labels, fallback }) {
       for (const root of roots) setFade(root, false);
       return;
     }
-    const faded = new Set();
-    const chest = new THREE.Vector3(look.x, Math.max(18, look.y), look.z);
-    const head = chest.clone();
-    head.y += 22;
-    for (const target of [chest, head]) {
-      const delta = target.clone().sub(camera.position);
-      const dist = delta.length();
-      if (dist < 8) continue;
-      raycaster.set(camera.position, delta.multiplyScalar(1 / dist));
-      raycaster.near = 1;
-      raycaster.far = dist - 8;
-      const hits = raycaster.intersectObjects(roots, true);
-      for (const hit of hits) {
-        let node = hit.object;
-        while (node && !node.userData?.occlude) node = node.parent;
-        if (node) faded.add(node);
-      }
-    }
+    const faded = revealFaded;
+    faded.clear();
+    revealChest.set(look.x, Math.max(18, look.y), look.z);
+    revealHead.copy(revealChest);
+    revealHead.y += 22;
+    fadeBlockers(revealChest, roots, faded);
+    fadeBlockers(revealHead, roots, faded);
     for (const root of roots) setFade(root, faded.has(root));
   }
 
+  function fadeBlockers(target, roots, faded) {
+    const delta = revealRay.copy(target).sub(camera.position);
+    const dist = delta.length();
+    if (dist < 8) return;
+    raycaster.set(camera.position, delta.multiplyScalar(1 / dist));
+    raycaster.near = 1;
+    raycaster.far = dist - 8;
+    revealHits.length = 0;
+    raycaster.intersectObjects(roots, true, revealHits);
+    for (const hit of revealHits) {
+      let node = hit.object;
+      while (node && !node.userData?.occlude) node = node.parent;
+      if (node) faded.add(node);
+    }
+    revealHits.length = 0;
+  }
+
   function phoneNow() {
-    return window.matchMedia("(max-width: 980px)").matches;
+    phoneMedia ||= window.matchMedia("(max-width: 980px)");
+    return phoneMedia.matches;
   }
 
   function detectSoftware() {
@@ -624,6 +650,7 @@ export function createWorld({ view, preview, labels, fallback }) {
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
     syncPreviewSize();
+    redraw.force();
   }
   function syncStallDoors(state, dt) {
     const open = state?.stallOpen;
@@ -652,6 +679,7 @@ export function createWorld({ view, preview, labels, fallback }) {
     frameToys(dt || 0.016, state);
     placeCamera(dt || 0.016);
     actorGroup.updateMatrixWorld(true);
+    beginLabels();
     for (const [id, actor] of actors) {
       const label = actor.userData.label;
       if (label) placeFloater(id, actor, label.title, label.subtitle, label.bubble, label.hand);
@@ -659,7 +687,7 @@ export function createWorld({ view, preview, labels, fallback }) {
     reveal();
     shadeActors();
     updateChatLift(state);
-    drawScene();
+    if (redraw.due(performance.now())) drawScene();
     noteActor(state);
   }
 

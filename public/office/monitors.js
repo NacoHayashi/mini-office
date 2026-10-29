@@ -1,6 +1,8 @@
 // Desk monitors: a screen lights up while someone sits at that desk and goes dark when they stand up.
 // Who sits where already reaches everyone with the chairs, so every client lights the same screens.
 
+import { restyle } from "./world-materials.js";
+
 // Keep the screen colours soft: a dim plum glass when off, a pale sky glow when on.
 const DARK = { color: 0x2f2a3c, emissive: 0x000000, glow: 0 };
 const LIT = { color: 0xd8f1ff, emissive: 0x8fd6ff, glow: 0.85 };
@@ -52,15 +54,13 @@ export function paintScreen(group, lit) {
   const look = lit ? LIT : DARK;
   group.traverse((node) => {
     if (!node.isMesh || !node.userData.screen) return;
-    const list = Array.isArray(node.material) ? node.material : [node.material];
-    for (const material of list) {
-      if (!material) continue;
+    restyle(node, lit ? "screen-lit" : "screen-dark", (material) => {
       material.color?.setHex(look.color);
       if (material.emissive) {
         material.emissive.setHex(look.emissive);
         material.emissiveIntensity = look.glow;
       }
-    }
+    });
   });
   return true;
 }
@@ -68,6 +68,7 @@ export function paintScreen(group, lit) {
 export function attachMonitors(env) {
   const { state, world } = env;
   let shown = new Map();
+  let spare = new Map();
 
   function present(id) {
     return id === state.me?.id || state.others.has(id);
@@ -75,12 +76,14 @@ export function attachMonitors(env) {
 
   function frame(meshes) {
     const lit = litMonitors(state.furniture, present, state.specs);
-    const next = new Map();
+    const next = spare;
+    next.clear();
     for (const [id, mesh] of meshes) {
       if (mesh.userData.kind !== "monitor") continue;
       paintScreen(mesh, lit.has(id));
       next.set(id, mesh.userData.lit === true);
     }
+    spare = shown;
     shown = next;
   }
 

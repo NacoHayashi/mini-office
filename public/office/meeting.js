@@ -621,7 +621,7 @@ export function attachMeeting(env) {
   }
 
   function dress(furnMeshes, propGroup) {
-    for (const [, mesh] of furnMeshes) {
+    for (const mesh of furnMeshes.values()) {
       if (mesh.userData.kind === "board") dressBoard(mesh);
     }
     for (const group of propGroup?.children || []) {

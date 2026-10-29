@@ -129,8 +129,22 @@ export function createActors(ctx) {
     actor.userData.jelly = jelly;
   }
 
+  // Reused every frame so the render loop makes no garbage for these lists.
+  const keep = new Set();
+  const want = new Set();
+  const people = [];
+  const peopleMoving = [];
+
+  function setLabel(actor, title, subtitle, bubble, hand) {
+    const label = actor.userData.label || (actor.userData.label = {});
+    label.title = title;
+    label.subtitle = subtitle;
+    label.bubble = bubble;
+    label.hand = hand;
+  }
+
   function syncActors(state, time, dt) {
-    const keep = new Set();
+    keep.clear();
     if (state.map?.lala) {
       const lala = state.map.lala;
       const actor = ensureActor("lala", LALA_LOOK, true);
@@ -141,20 +155,28 @@ export function createActors(ctx) {
       animateActor(actor, false, time, gaze, false, dt, gaze);
       const line = state.lalaBubble;
       const lalaLine = line && line.until > performance.now() ? line.text : "";
-      actor.userData.label = { title: lala.name || "Lala 小姐", subtitle: lala.title || "櫃檯", bubble: lalaLine };
+      setLabel(actor, lala.name || "Lala 小姐", lala.title || "櫃檯", lalaLine, false);
     }
-    const people = [];
-    if (state.me) people.push({ ...state.me, moving: Boolean(state.walking) });
-    for (const other of state.others?.values?.() || []) {
-      const moving = Math.hypot((other.tx ?? other.x) - other.x, (other.ty ?? other.y) - other.y) > 1.5;
-      people.push({ ...other, moving });
+    people.length = 0;
+    peopleMoving.length = 0;
+    if (state.me) {
+      people.push(state.me);
+      peopleMoving.push(Boolean(state.walking));
+    }
+    if (state.others?.values) {
+      for (const other of state.others.values()) {
+        people.push(other);
+        peopleMoving.push(Math.hypot((other.tx ?? other.x) - other.x, (other.ty ?? other.y) - other.y) > 1.5);
+      }
     }
     const bodies = [];
     if (state.map?.lala) {
       const lalaActor = actors.get("lala");
       if (lalaActor) bodies.push({ actor: lalaActor, x: lalaActor.position.x, z: lalaActor.position.z, r: bodyRadius(LALA_LOOK), pin: true });
     }
-    for (const person of people) {
+    for (let index = 0; index < people.length; index += 1) {
+      const person = people[index];
+      const personMoving = peopleMoving[index];
       const actor = ensureActor(person.id, person.look || FALLBACK_LOOK);
       keep.add(person.id);
       const prevX = actor.userData.px ?? person.x;
@@ -163,7 +185,7 @@ export function createActors(ctx) {
       const dz = person.y - prevZ;
       const stepped = Math.abs(dx) > 0.01 || Math.abs(dz) > 0.01;
       const mine = person.id === state.me?.id;
-      const walking = Boolean(person.moving) && !person.seat;
+      const walking = personMoving && !person.seat;
       actor.userData.px = person.x;
       actor.userData.pz = person.y;
       actor.userData.sitting = Boolean(person.seat);
@@ -176,7 +198,7 @@ export function createActors(ctx) {
           world.faceReady = true;
           if (!Number.isFinite(actor.userData.heading)) actor.userData.heading = world.face;
         }
-        const moving = Boolean(person.moving);
+        const moving = personMoving;
         world.walking = moving;
         if (moving && stepped) {
           moveFace = Math.atan2(dx, dz);
@@ -221,7 +243,7 @@ export function createActors(ctx) {
         }
       }
       const stride = actor.userData.stride ?? 0;
-      actor.userData.stride = stride + ((person.moving && !person.seat ? 1 : 0) - stride) * (1 - Math.exp(-12 * Math.max(0.001, dt)));
+      actor.userData.stride = stride + ((personMoving && !person.seat ? 1 : 0) - stride) * (1 - Math.exp(-12 * Math.max(0.001, dt)));
       const perch = person.seat && (state.furniture || []).find((item) => item.id === person.seat)?.kind === "stool";
       const hop = person.seat ? (perch ? STOOL_HOP : 11) : Math.abs(Math.sin(time * 11)) * 3.5 * actor.userData.stride;
       const radius = bodyRadius(person.look);
@@ -237,10 +259,13 @@ export function createActors(ctx) {
       actor.userData.rz = rz;
       bodies.push({ actor, x: rx, z: rz, r: radius, pin: pinned, hop });
       const bubble = visibleBubble(state, person.id);
-      const glide = Boolean(person.seat) && Boolean(person.moving);
+      const glide = Boolean(person.seat) && personMoving;
       animateActor(actor, (walking || glide) && gaze == null, time + (person.id || "").length, moveFace, Boolean(bubble.text), dt, gaze, gazeRate);
       if (mine) world.shown = actor.userData.heading;
-      actor.userData.label = { title: person.displayName || person.id, subtitle: `@${person.id}`, bubble, hand: Boolean(state.hands?.has(person.id)) };
+      const handle = actor.userData.handle === person.id ? actor.userData.handleText : `@${person.id}`;
+      actor.userData.handle = person.id;
+      actor.userData.handleText = handle;
+      setLabel(actor, person.displayName || person.id, handle, bubble, Boolean(state.hands?.has(person.id)));
     }
     separateBodies(bodies);
     for (const body of bodies) {
@@ -280,7 +305,7 @@ export function createActors(ctx) {
   }
 
   function syncAuras(state) {
-    const want = new Set();
+    want.clear();
     const memberGroup = state.memberGroup;
     if (memberGroup) {
       for (const [id, group] of memberGroup) {

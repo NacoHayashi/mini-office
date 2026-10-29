@@ -14,7 +14,8 @@
 - `games/bbq.html`：燒肉屋原始檔，**不要修改**。
 - `src/games.json`：大廳卡片與記分設定清單。
 - `scripts/build.mjs`：由 `games/` 產生 `public/games/index.html`（產物，不要手改）。
-- `scripts/bundle-office.mjs`、`scripts/office-*.mjs`：打包辦公室用的 three.js 擴充到 `public/office/vendor/`。
+- `scripts/bundle-office.mjs`、`scripts/office-*.mjs`：打包並壓縮辦公室用的 three.js 與擴充到 `public/office/vendor/`（`npm run vendor:extras`）。
+- `scripts/stamp-assets.mjs`：依內容替 vendor 檔與家具模型加版本號（`public/index.html` 的 import map、`furnish.js` 的 `MODEL_VERSION`），這兩類檔案會被長期快取；改了 vendor 或 GLB 後要重跑（`npm run vendor:extras` 會自動跑）。
 - `src/index.ts`：Worker 進入點與路由分派。
 - `src/office-room.ts`：辦公室 Durable Object 進入點（請求分派、WebSocket、移動、聊天、外觀）。
 - `src/room-*.ts`：辦公室 Durable Object 依功能分開的部分：`room-base`（共用狀態與儲存）、`room-login`（登入、配對、訪客）、`room-admin`（管理頁）、`room-scores`（分數）、`room-seats`（椅子、高腳椅）、`room-toys`（玩具、碰撞）、`room-snacks`（零食、廁所）、`room-whisper`（悄悄話）、`room-furniture`（擺設編輯）、`room-meeting`（會議室白板、螢幕、舉手、投票、室內聊天）、`room-pantry`（茶水間熱飲、微波爐、丟零食、冰箱便利貼）、`room-gym`（健身房啞鈴排行榜、瑜珈、彈力球、飲水機）。
@@ -26,7 +27,7 @@
 - `src/gym.ts`：健身房排行榜（存在房間的 meta，不用遷移）、短暫加速、瑜珈姿勢的規則。
 - `src/pairing.ts`、`src/admin-session.ts`、`src/crypto.ts`、`src/http.ts`：裝置配對、管理員工作階段、共用工具。
 - `public/office/game.js`：辦公室前端進入點（畫面迴圈、版面、啟動）；同目錄依功能分檔：`office-state.js`（共用狀態）、`net.js`（連線）、`login.js`、`movement.js`、`input.js`、`interact.js`、`edit-mode.js`、`whisper.js`、`people.js`、`chat.js`、`actions.js`、`arcade.js`、`look-editor.js`、`debug.js`。
-- `public/office/world3d.js`：3D 場景主體與繪製；`world-*.js` 分別是材質、房間、家具、角色、名牌、預覽、鏡頭。
+- `public/office/world3d.js`：3D 場景主體與繪製；`world-*.js` 分別是材質、房間、家具、角色、名牌、預覽、鏡頭，`world-redraw.js` 決定畫面沒變時跳過重畫。
 - `public/office/avatar.js`：角色外型、配件與動作。
 - `public/office/furnish.js`：載入 Kenney GLB 家具。
 - `public/office/toon.js`：卡通材質與家具描邊。

@@ -1,4 +1,5 @@
 import * as THREE from "./vendor/three.module.js";
+import { restyle } from "./world-materials.js";
 
 // Keep in sync with STALL_REACH in src/stalls.ts.
 const REACH = 60;
@@ -25,11 +26,11 @@ function tintWall(group, tint) {
     const color = new THREE.Color(tint);
     group.traverse((node) => {
       if (!node.isMesh || node.userData.outline) return;
-      const material = node.material;
-      if (!material) return;
       // Bubbly Bathroom look: tinted panels over a white tiled base.
-      if (material.name === "metalDark") material.color.setHex(0xfffaf2);
-      else if (material.name === "wood" || material.name === "_defaultMat") material.color.copy(color);
+      restyle(node, `stall|${tint}`, (material) => {
+        if (material.name === "metalDark") material.color.setHex(0xfffaf2);
+        else material.color.copy(color);
+      }, (material) => material.name === "metalDark" || material.name === "wood" || material.name === "_defaultMat");
     });
   };
 }

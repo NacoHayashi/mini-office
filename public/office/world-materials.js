@@ -1,6 +1,60 @@
 // Shared toon materials, cached geometry, and small mesh helpers for the office scene.
 import * as THREE from "./vendor/three.module.js";
 
+// Changed copies of a material (a tint, a lit screen, a fade) are shared by
+// every mesh that asks for the same change, instead of one copy per mesh.
+const variants = new Map();
+const rootOf = new WeakMap();
+const fades = new WeakMap();
+const solids = new WeakMap();
+
+function variant(base, key, apply) {
+  const id = `${base.uuid}|${key}`;
+  let material = variants.get(id);
+  if (!material) {
+    material = base.clone();
+    apply(material);
+    rootOf.set(material, base);
+    variants.set(id, material);
+  }
+  return material;
+}
+
+function fadedOf(material) {
+  if (solids.has(material)) return material;
+  let faded = fades.get(material);
+  if (!faded) {
+    faded = material.clone();
+    faded.transparent = true;
+    faded.depthWrite = false;
+    faded.opacity = 0.13 * material.opacity;
+    fades.set(material, faded);
+    solids.set(faded, material);
+  }
+  return faded;
+}
+
+function solidOf(material) {
+  return solids.get(material) || material;
+}
+
+/**
+ * Restyle a mesh's materials: each slot whose original material passes `pick`
+ * gets the shared copy of it changed by `apply`, and `key` names that change
+ * (same key, same copy). A faded mesh stays faded.
+ */
+export function restyle(node, key, apply, pick = () => true) {
+  const swap = (material) => {
+    if (!material) return material;
+    const solid = solidOf(material);
+    const root = rootOf.get(solid) || solid;
+    if (!pick(root)) return material;
+    const next = variant(root, key, apply);
+    return node.userData.faded ? fadedOf(next) : next;
+  };
+  node.material = Array.isArray(node.material) ? node.material.map(swap) : swap(node.material);
+}
+
 export function createMaterials(ctx) {
   const { blobTexture, gradient, renderer, skinGradient } = ctx;
 
@@ -90,19 +144,12 @@ export function createMaterials(ctx) {
     });
   }
 
-  function ownMaterials(object) {
-    object.traverse((node) => {
-      if (!node.isMesh || node.userData.owned) return;
-      const material = node.material.clone();
-      node.material = material;
-      node.userData.owned = true;
-      node.userData.baseOpacity = material.opacity;
-      node.userData.baseTransparent = material.transparent;
-      node.userData.baseDepthWrite = material.depthWrite;
-    });
-  }
-
+  // Fading swaps in a shared see-through copy of the mesh's material, made the
+  // first time any mesh with that material fades, and swaps back afterwards.
   function setFade(object, faded) {
+    // Most occluders stay solid every frame; skip their subtree once it is known solid.
+    if (!faded && object.userData.solidTree) return;
+    object.userData.solidTree = !faded;
     object.traverse((node) => {
       if (!node.isMesh || Boolean(node.userData.faded) === faded) return;
       node.userData.faded = faded;
@@ -111,17 +158,9 @@ export function createMaterials(ctx) {
         node.visible = !faded;
         return;
       }
-      const material = node.material;
-      if (!faded) {
-        material.opacity = node.userData.baseOpacity ?? 1;
-        material.transparent = Boolean(node.userData.baseTransparent);
-        material.depthWrite = node.userData.baseDepthWrite !== false;
-      } else {
-        material.transparent = true;
-        material.depthWrite = false;
-        material.opacity = 0.13 * (node.userData.baseOpacity ?? 1);
-      }
-      material.needsUpdate = true;
+      node.material = Array.isArray(node.material)
+        ? node.material.map((material) => (faded ? fadedOf(material) : solidOf(material)))
+        : faded ? fadedOf(node.material) : solidOf(node.material);
     });
   }
 
@@ -225,7 +264,6 @@ export function createMaterials(ctx) {
     geo,
     mat,
     mats,
-    ownMaterials,
     patternTexture,
     roundedBox,
     rugMesh,
