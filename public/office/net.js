@@ -2,7 +2,7 @@
 import { createRequests } from "./requests.js";
 import { closeArcade, closeBoard, refreshBoard } from "./arcade.js";
 import { buildPalette, clearArmed, clearPendingAdd, paintTools, pendingAdd, setEditing } from "./edit-mode.js";
-import { ensureLoop, meeting, pantry, resize, snacks, stalls, toys } from "./game.js";
+import { ensureLoop, gym, meeting, pantry, resize, snacks, stalls, toys } from "./game.js";
 import { loginOptions, showElsewhere, stopParkWatch } from "./login.js";
 import { showAvatar } from "./look-editor.js";
 import { $, setHint, state, world } from "./office-state.js";
@@ -59,6 +59,7 @@ export function showGate(message, options = {}) {
   toys.close();
   meeting.close();
   pantry.close();
+  gym.close();
   closeArcade();
   closeBoard();
   $("form-password").hidden = false;
@@ -200,6 +201,7 @@ export function onNet(message) {
   toys.onNet(message);
   meeting.onNet(message);
   pantry.onNet(message);
+  gym.onNet(message);
   if (message.t === "welcome") {
     state.map = message.map;
     state.furniture = message.furniture || [];

@@ -1,7 +1,7 @@
 // Using things nearby: chairs, the mirror, the arcade, the board, and taps.
 import { openArcade, openBoard } from "./arcade.js";
 import { hitFurniture } from "./edit-mode.js";
-import { pantry, snacks, stalls, toys } from "./game.js";
+import { gym, pantry, snacks, stalls, toys } from "./game.js";
 import { showAvatar } from "./look-editor.js";
 import { bodyRadius, collides, findPath, freeSpot, inRestroom, nearLala, noteBump, resolveBodies, seatApproach } from "./movement.js";
 import { send, sendMove } from "./net.js";
@@ -151,6 +151,7 @@ export function interact() {
   if (snacks.dismiss()) return;
   if (toys.dismiss()) return;
   if (pantry.interact(state.seat ? -1 : nearestChair()?.dist)) return;
+  if (gym.interact(nearestChair()?.dist)) return;
   const blockBite = nearLala() || (!state.seat && (nearestChair() || nearestUse() || stalls.nearest()));
   if (snacks.carrying() && !blockBite) {
     snacks.nibble();

@@ -24,12 +24,16 @@ export function createActors(ctx) {
 
   let toyHook = null;
 
+  let gymHook = null;
+
   let auraDisc = null;
   let auraRing = null;
 
   function setSnackHook(fn) { snackHook = typeof fn === "function" ? fn : null; }
 
   function setToyHook(hooks) { toyHook = hooks && typeof hooks === "object" ? hooks : null; }
+
+  function setGymHook(fn) { gymHook = typeof fn === "function" ? fn : null; }
 
   function frameToys(dt, state) {
     if (toyHook?.frame) toyHook.frame(dt, state);
@@ -76,6 +80,7 @@ export function createActors(ctx) {
     if (actor.userData.decal) paintFace(actor.userData.decal, phase > 4.05, Boolean(talking) || Boolean(actor.userData.tasting));
     if (snackHook) snackHook(actor, { sitting, time, dt });
     if (toyHook?.actor) toyHook.actor(actor, { sitting, time, dt });
+    if (gymHook) gymHook(actor, { sitting, time, dt });
   }
 
   function separateBodies(bodies) {
@@ -330,6 +335,7 @@ export function createActors(ctx) {
     animateActor,
     frameToys,
     nudge,
+    setGymHook,
     setSnackHook,
     setToyHook,
     signature,

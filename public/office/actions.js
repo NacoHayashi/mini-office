@@ -1,12 +1,12 @@
 // The context action buttons.
-import { meeting, pantry, snacks, stalls, toys } from "./game.js";
+import { gym, meeting, pantry, snacks, stalls, toys } from "./game.js";
 import { interact, nearestChair, nearestUse } from "./interact.js";
 import { inRestroom, nearLala } from "./movement.js";
 import { $, phoneQuery, state } from "./office-state.js";
 import { nearestWhisper, toggleWhisper } from "./whisper.js";
 
 function actionsNow() {
-  if (!phoneQuery.matches || !state.me || state.editing || state.help || state.arcade || state.boardOpen || !$("avatar").hidden || !$("dialogue").hidden || snacks.isOpen() || toys.isOpen() || meeting.isOpen() || pantry.isOpen()) return [];
+  if (!phoneQuery.matches || !state.me || state.editing || state.help || state.arcade || state.boardOpen || !$("avatar").hidden || !$("dialogue").hidden || snacks.isOpen() || toys.isOpen() || meeting.isOpen() || pantry.isOpen() || gym.isOpen()) return [];
   const list = [];
   const near = nearestWhisper();
   if (state.whisper) list.push({ id: "leave", label: "離開悄悄話", run: toggleWhisper });
@@ -15,6 +15,7 @@ function actionsNow() {
   const bite = snacks.heldAction();
   if (bite) list.push(bite);
   list.push(...pantry.actions());
+  list.push(...gym.actions());
   list.push(...toys.actions());
   const snack = snacks.action();
   if (snack) list.push(snack);

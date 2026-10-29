@@ -14,13 +14,13 @@ export const MACHINE_ID = {
 
 export type SnackMachine = keyof typeof MACHINE_ID;
 export type SnackPose = "eat" | "drink";
-/** Pantry treats come from the coffee machine or the microwave and are never out of stock. */
-export type PantrySource = "coffee" | "microwave";
+/** Treats from the coffee machine, the microwave or the gym water cooler never run out. */
+export type FreeSource = "coffee" | "microwave" | "cooler";
 
 export type SnackItem = {
   id: string;
   label: string;
-  machine: SnackMachine | PantrySource;
+  machine: SnackMachine | FreeSource;
   pose: SnackPose;
   hot?: boolean;
 };
@@ -38,6 +38,7 @@ export const SNACK_ITEMS: readonly SnackItem[] = [
   { id: "cocoa", label: "熱可可", machine: "coffee", pose: "drink", hot: true },
   { id: "hottea", label: "熱紅茶", machine: "coffee", pose: "drink", hot: true },
   { id: "bun", label: "熱包子", machine: "microwave", pose: "eat", hot: true },
+  { id: "water", label: "冰開水", machine: "cooler", pose: "drink" },
 ];
 
 /** Items the cabinet and the vending machine count down. */
@@ -196,10 +197,10 @@ export class SnackRoom {
     return { ok: true, itemId: item.id, pose: item.pose, stock: this.view() };
   }
 
-  /** Puts a pantry treat straight into someone's hands. Returns false for anything else. */
+  /** Puts a free treat straight into someone's hands. Returns false for stocked or unknown items. */
   give(playerId: string, itemId: string): boolean {
     const item = ITEM_BY_ID.get(itemId);
-    if (!item || (item.machine !== "coffee" && item.machine !== "microwave")) return false;
+    if (!item || item.machine === "cabinet" || item.machine === "vendor") return false;
     this.hands.set(playerId, item.id);
     return true;
   }

@@ -13,7 +13,7 @@ import esbuild from "esbuild";
 function readSources(files) {
   return files.map((file) => readFileSync(join(import.meta.dirname, "..", file), "utf8")).join("\n");
 }
-const ROOM_FILES = ["base", "login", "admin", "scores", "seats", "toys", "snacks", "whisper", "furniture", "meeting", "pantry"]
+const ROOM_FILES = ["base", "login", "admin", "scores", "seats", "toys", "snacks", "whisper", "furniture", "meeting", "pantry", "gym"]
   .map((name) => `src/room-${name}.ts`)
   .concat("src/office-room.ts");
 const CLIENT_FILES = [
@@ -2345,7 +2345,8 @@ test("meeting room keeps a small whiteboard, the big screen, hands and one vote 
 
 test("meeting tools are wired in: room chat stays in the room and hands drop on the way out", () => {
   const room = roomSource();
-  assert.match(room, /class OfficeRoom extends RoomPantry/);
+  assert.match(room, /class OfficeRoom extends RoomGym/);
+  assert.match(room, /class RoomGym extends RoomPantry/);
   assert.match(room, /class RoomPantry extends RoomMeeting/);
   assert.match(room, /class RoomMeeting extends RoomFurniture/);
   assert.match(room, /kind === "meeting"\) this\.onMeeting/);
@@ -2471,7 +2472,7 @@ test("pantry is wired in like the other rooms and keeps everything in the meta r
   const client = clientSource();
   assert.match(client, /pantry\.onNet\(message\)/);
   assert.match(client, /attachPantry\(/);
-  assert.match(client, /pantry\.isOpen\(\)\) return \[\];/);
+  assert.match(client, /pantry\.isOpen\(\)( \|\| gym\.isOpen\(\))?\) return \[\];/);
   const pantryClient = readFileSync(join(import.meta.dirname, "../public/office/pantry.js"), "utf8");
   // Feature files only declare things; nothing runs when the file loads.
   for (const lineText of pantryClient.split("\n")) {
@@ -2482,6 +2483,86 @@ test("pantry is wired in like the other rooms and keeps everything in the meta r
   assert.match(pantryClient, /確定撕掉/);
   assert.match(pantryClient, /先不要/);
   const css = readFileSync(join(import.meta.dirname, "../public/office/office.css"), "utf8");
-  assert.match(css, /#pantry-panel button \{ min-height: var\(--btn-h-lg\)/);
+  assert.match(css, /#pantry-panel button, #gym-panel button \{ min-height: var\(--btn-h-lg\)/);
   assert.match(css, /button\.tint \{ width: 44px; min-width: 44px; min-height: 44px;/);
+});
+
+test("gym keeps a dumbbell leaderboard in the meta row, short buffs, mat poses and free water", async () => {
+  const serverFile = join(outdir, "gym-server.mjs");
+  await esbuild.build({ entryPoints: [join(import.meta.dirname, "../src/gym.ts")], bundle: true, format: "esm", platform: "neutral", outfile: serverFile });
+  const gym = await import(pathToFileURL(serverFile).href);
+  const room = new gym.GymRoom();
+  room.load(null);
+  assert.equal(room.lift("a", "小八", 0), 1);
+  assert.equal(room.lift("b", "吉伊", 0), 1);
+  assert.equal(room.lift("b", "吉伊", 10), 2);
+  assert.deepEqual(room.mine("b"), { rank: 1, sets: 2 });
+  assert.deepEqual(room.mine("a"), { rank: 2, sets: 1 });
+  assert.equal(room.mine("c"), null);
+  for (let i = 0; i < gym.BOARD_TOP + 3; i++) room.lift(`p${i}`, `人${i}`, 0);
+  assert.equal(room.top().length, gym.BOARD_TOP);
+  assert.equal(room.top()[0].id, "b");
+  // Only the board is saved, checked again on load and capped.
+  const saved = JSON.parse(room.save());
+  assert.deepEqual(Object.keys(saved), ["board"]);
+  const again = new gym.GymRoom();
+  const extra = Array.from({ length: gym.BOARD_KEEP + 5 }, (_, i) => ({ id: `z${i}`, name: "某人", sets: 1 }));
+  again.load(JSON.stringify({ board: [{ id: "x", name: "", sets: 3 }, { id: "y", name: "壞", sets: -1 }, ...saved.board, ...extra] }));
+  assert.equal(again.board.length, gym.BOARD_KEEP);
+  assert.equal(again.board[0].id, "b");
+  assert.equal(again.board.some((row) => row.id === "x" || row.id === "y"), false);
+  again.load("{bad");
+  assert.deepEqual(again.board, []);
+  // Buffs run out, poses end once their owner steps off, and both go with someone who leaves.
+  const here = { a: { x: 10, y: 10 }, b: { x: 50, y: 50 } };
+  room.poses.set("a", { x: 10, y: 10 });
+  room.poses.set("b", { x: 40, y: 40 });
+  let view = room.view(gym.BUFF_MS - 1, (id) => here[id] || null);
+  assert.deepEqual(view.poses, ["a"]);
+  assert.equal(view.buffs.b, gym.BUFF_MS + 10 - (gym.BUFF_MS - 1));
+  assert.equal("p0" in view.buffs, false);
+  view = room.view(gym.BUFF_MS + 20, (id) => here[id] || null);
+  assert.deepEqual(view.buffs, {});
+  room.lift("a", "小八", 0);
+  room.forget("a");
+  assert.equal(room.poses.size + room.buffs.size, 0);
+  // The mats count only when standing on them; the rest is by reach.
+  const office = content.buildOffice();
+  const mats = gym.decorOf(office.props, "gym-mats");
+  assert.ok(gym.onDecor(mats.x + 1, mats.y + 1, mats));
+  assert.equal(gym.onDecor(mats.x - 1, mats.y, mats), false);
+  for (const model of ["gym-dumbbells", "gym-mats", "gym-ball", "gym-cooler"]) {
+    const prop = gym.decorOf(office.props, model);
+    assert.ok(prop && gym.inGym(prop.x + prop.w / 2, prop.y + prop.h / 2, office.zones), model);
+  }
+  // No chairs went into the gym.
+  assert.equal(office.props.some((prop) => prop.kind !== "decor" && gym.inGym(prop.x + prop.w / 2, prop.y + prop.h / 2, office.zones) && /chair|stool|seat/.test(prop.kind)), false);
+  // Water from the cooler goes into hands like the pantry treats and never counts as stock.
+  const snack = new snacks.SnackRoom();
+  assert.equal(snacks.snackItem("water").machine, "cooler");
+  assert.equal("water" in snack.view(), false);
+  assert.equal(snack.give("a", "water"), true);
+  assert.equal(snack.handsView().find((row) => row.id === "a").pose, "drink");
+});
+
+test("gym is wired in like the other rooms and keeps everything in the meta row", () => {
+  const room = roomSource();
+  assert.match(room, /kind === "gym"\) this\.onGym/);
+  assert.match(room, /gym: this\.gymView\(member\.id\)/);
+  assert.match(room, /this\.settleGym\(att\)/);
+  assert.ok(!/GYM_META|"gym"/.test(readFileSync(join(import.meta.dirname, "../src/migrations.ts"), "utf8")));
+  const client = clientSource();
+  assert.match(client, /gym\.onNet\(message\)/);
+  assert.match(client, /attachGym\(/);
+  assert.match(client, /gym\.isOpen\(\)\) return \[\];/);
+  assert.match(client, /\* gym\.speedBoost\(\)/);
+  const gymClient = readFileSync(join(import.meta.dirname, "../public/office/gym.js"), "utf8");
+  for (const lineText of gymClient.split("\n")) {
+    if (!lineText || lineText.startsWith(" ") || lineText.startsWith("}") || lineText.startsWith("//")) continue;
+    assert.match(lineText, /^(import |export function |const |function )/, lineText);
+  }
+  // The speed boost stays under what the server lets anyone move.
+  assert.ok(Number(/BUFF_BOOST = ([\d.]+)/.exec(gymClient)[1]) * 280 * 1 < 340);
+  const css = readFileSync(join(import.meta.dirname, "../public/office/office.css"), "utf8");
+  assert.match(css, /#pantry-panel, #gym-panel \{/);
 });
