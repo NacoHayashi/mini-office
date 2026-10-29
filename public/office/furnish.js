@@ -7,6 +7,9 @@ import { addOutline, edgeColor, stepGradient } from "./toon.js";
 const TINY_TREATS = ["bath-toilet", "bath-sink", "bath-mirror", "bath-mat", "bath-roll", "bath-plant", "kitchen-kettle", "kitchen-mug", "kitchen-dishrack", "kitchen-toaster"];
 const ONE_MORE_REP = ["gym-treadmill", "gym-bike", "gym-dumbbells", "gym-kettlebells", "gym-bench", "gym-mats", "gym-ball", "gym-cooler"];
 
+// Bumped by scripts/stamp-assets.mjs so long-cached models refresh when they change.
+const MODEL_VERSION = "f54fc33392";
+
 const FILES = [
   "desk",
   "chairDesk",
@@ -78,6 +81,12 @@ const OUTLINED = new Set(["desk", "loungeSofa", "bookcaseOpen", "bookcaseOpenLow
 // Mini Arcade, Food Kit, Survival Kit, Minigolf Kit, Toy Car Kit and the itch.io packs ship a colormap instead of Furniture Kit material names.
 const TEXTURED = new Set(["vending-machine", "plate", "cookie", "cupcake", "cup-tea", "donut", "vehicle-racer", "chocolate", "soda-can", ...TINY_TREATS, ...ONE_MORE_REP]);
 const ramp = stepGradient([178, 224, 255]);
+// One material per palette colour (or per texture) for every model, not one per mesh.
+const shared = new Map();
+const keep = (key, material) => {
+  shared.set(key, material);
+  return material;
+};
 
 function recolor(root, file) {
   const meshes = [];
@@ -94,22 +103,26 @@ function recolor(root, file) {
     const next = source.map((material) => {
       if (TEXTURED.has(file)) {
         const map = material?.map || null;
+        const side = material?.side === THREE.DoubleSide ? THREE.DoubleSide : THREE.FrontSide;
+        const key = `${map ? map.uuid : "-"}|${material?.name || "colormap"}|${side}`;
+        if (shared.has(key)) return shared.get(key);
         if (map) {
           map.colorSpace = THREE.SRGBColorSpace;
           map.flipY = false;
           map.needsUpdate = true;
         }
-        return new THREE.MeshToonMaterial({
+        return keep(key, new THREE.MeshToonMaterial({
           name: material?.name || "colormap",
           map,
           color: 0xffffff,
           gradientMap: ramp,
-          side: material?.side === THREE.DoubleSide ? THREE.DoubleSide : THREE.FrontSide,
-        });
+          side,
+        }));
       }
       const name = material?.name || "_defaultMat";
+      if (shared.has(name)) return shared.get(name);
       const look = PALETTE[name] || PALETTE._defaultMat;
-      return new THREE.MeshToonMaterial({
+      return keep(name, new THREE.MeshToonMaterial({
         name,
         color: look.color,
         gradientMap: ramp,
@@ -117,7 +130,7 @@ function recolor(root, file) {
         opacity: look.opacity ?? 1,
         emissive: look.emissive || 0x000000,
         emissiveIntensity: look.emissiveIntensity || 0,
-      });
+      }));
     });
     node.material = Array.isArray(node.material) ? next : next[0];
     node.castShadow = true;
@@ -161,7 +174,7 @@ export function createLibrary() {
   const ready = (async () => {
     // Start every download at once: each await can sit behind a render frame,
     // so fetching one file at a time pays that wait per file.
-    const buffers = FILES.map((name) => fetch(`/office/assets/kenney/${name}.glb`).then((response) => {
+    const buffers = FILES.map((name) => fetch(`/office/assets/kenney/${name}.glb?v=${MODEL_VERSION}`).then((response) => {
       if (!response.ok) throw new Error(String(response.status));
       return response.arrayBuffer();
     }));

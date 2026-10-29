@@ -270,12 +270,15 @@ export function findPath(x, y) {
   const goal = nearestOpen(Math.floor(x / TILE), Math.floor(y / TILE));
   if (!start || !goal) return [];
   const key = (tx, ty) => `${tx},${ty}`;
+  // Every step costs 1, so tiles leave the queue in score order and the first
+  // visit is already the shortest: a plain queue gives the same path as sorting.
   const open = [start];
+  let head = 0;
   const came = new Map();
   const score = new Map([[key(start[0], start[1]), 0]]);
-  while (open.length) {
-    open.sort((a, b) => (score.get(key(a[0], a[1])) || 0) - (score.get(key(b[0], b[1])) || 0));
-    const [tx, ty] = open.shift();
+  while (head < open.length) {
+    const [tx, ty] = open[head];
+    head += 1;
     if (tx === goal[0] && ty === goal[1]) {
       const path = [[tx, ty]];
       let cursor = key(tx, ty);
@@ -296,7 +299,7 @@ export function findPath(x, y) {
       if (next < (score.get(id) ?? Infinity)) {
         score.set(id, next);
         came.set(id, key(tx, ty));
-        if (!open.some((item) => item[0] === nx && item[1] === ny)) open.push([nx, ny]);
+        open.push([nx, ny]);
       }
     }
   }

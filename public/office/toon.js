@@ -31,6 +31,10 @@ export function setOutlineWidth(value) {
   width.value = value;
 }
 
+export function outlineWidth() {
+  return width.value;
+}
+
 // Inverted hull: back faces pushed out along the normal in view space. The
 // push grows with depth, so the line stays about the same width on screen in
 // both the overhead and the follow camera.

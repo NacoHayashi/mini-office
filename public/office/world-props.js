@@ -3,6 +3,7 @@ import * as THREE from "./vendor/three.module.js";
 import { cssColor } from "./avatar.js";
 import { createLibrary } from "./furnish.js";
 import { markScreen } from "./monitors.js";
+import { restyle } from "./world-materials.js";
 
 export function createProps(ctx) {
   const {
@@ -11,7 +12,6 @@ export function createProps(ctx) {
     doorPivots,
     geo,
     mat,
-    ownMaterials,
     propGroup,
     roundedBox,
     rugMesh,
@@ -60,13 +60,11 @@ export function createProps(ctx) {
   function paintNames(object, names, color, scale = 1) {
     const hex = cssColor(color, 0xfff6ea);
     object.traverse((node) => {
-      if (!node.isMesh) return;
-      const list = Array.isArray(node.material) ? node.material : [node.material];
-      for (const material of list) {
-        if (!names.includes(material.name)) continue;
+      if (!node.isMesh || node.userData.outline) return;
+      restyle(node, `paint|${hex}|${scale}`, (material) => {
         material.color.setHex(hex);
         if (scale !== 1) material.color.multiplyScalar(scale);
-      }
+      }, (material) => names.includes(material.name));
     });
   }
 
@@ -283,7 +281,6 @@ export function createProps(ctx) {
     if (prop.kind === "decor") group.userData.model = prop.model;
     if (prop.kind === "stalldoor" && group.userData.doorPivot) doorPivots.set(prop.id, group.userData.doorPivot);
     group.userData.occlude = occlude;
-    if (occlude || group.userData.paint) ownMaterials(group);
     if (group.userData.paint) group.userData.paint();
     return group;
   }
@@ -653,7 +650,6 @@ export function createProps(ctx) {
     group.userData.ring = ring;
     group.userData.kind = kind;
     group.userData.occlude = true;
-    ownMaterials(group);
     if (group.userData.paint) group.userData.paint();
     return group;
   }

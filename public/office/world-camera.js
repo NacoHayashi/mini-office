@@ -106,14 +106,15 @@ export function createCamera(ctx) {
   }
 
   function updateChatLift(state) {
-    const landscape = phoneNow() && view.clientWidth > view.clientHeight;
-    const chat = document.getElementById("chatbar");
-    const chatOpen = !!(chat && getComputedStyle(chat).display !== "none");
+    // Desktop and the follow camera never lift, so they skip the layout reads below.
     if (!phoneNow() || world.mode !== "iso") {
       releaseAutoFrame();
       chatLift = Math.max(0, chatLift - 12);
       return;
     }
+    const landscape = view.clientWidth > view.clientHeight;
+    const chat = document.getElementById("chatbar");
+    const chatOpen = !!(chat && getComputedStyle(chat).display !== "none");
     if (landscape && chatOpen) {
       frameLandscape(state, chat);
       return;
@@ -168,10 +169,11 @@ export function createCamera(ctx) {
     if (world.steerHeld && now >= (world.steerUntil || 0)) world.steerHeld = false;
   }
 
+  const focusAim = new THREE.Vector3();
   function followFocus(focus, dt) {
     const height = world.mode === "follow" ? 46 : 8;
     const yawNow = cameraYaw();
-    const next = new THREE.Vector3(
+    const next = focusAim.set(
       focus.x + Math.sin(yawNow) * chatLift,
       height,
       focus.y + Math.cos(yawNow) * chatLift,

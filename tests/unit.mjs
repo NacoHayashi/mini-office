@@ -2240,7 +2240,7 @@ test("monitor screens switch on the model's own glass, with no extra sheet stuck
   const source = readFileSync(join(import.meta.dirname, "../public/office/monitors.js"), "utf8");
   // A feature file only declares things; nothing runs when it is loaded.
   for (const line of source.split("\n")) {
-    if (!line || /^\s/.test(line) || line.startsWith("//") || line.startsWith("/**") || line === "}") continue;
+    if (!line || /^\s/.test(line) || line.startsWith("//") || line.startsWith("/**") || line === "}" || line.startsWith("import ")) continue;
     assert.match(line, /^(export )?(function|const) /, line);
   }
   assert.match(clientSource(), /attachMonitors\(\{ state, world \}\)/);
@@ -2565,4 +2565,53 @@ test("gym is wired in like the other rooms and keeps everything in the meta row"
   assert.ok(Number(/BUFF_BOOST = ([\d.]+)/.exec(gymClient)[1]) * 280 * 1 < 340);
   const css = readFileSync(join(import.meta.dirname, "../public/office/office.css"), "utf8");
   assert.match(css, /#pantry-panel, #gym-panel \{/);
+});
+
+test("vendor files and models carry their current content stamp", async () => {
+  const { assetStamps, importMap } = await import(pathToFileURL(join(import.meta.dirname, "../scripts/stamp-assets.mjs")).href);
+  const stamps = assetStamps();
+  const html = readFileSync(join(import.meta.dirname, "../public/index.html"), "utf8");
+  assert.ok(html.includes(importMap(stamps)), "public/index.html import map is stale: run node scripts/stamp-assets.mjs");
+  const furnish = readFileSync(join(import.meta.dirname, "../public/office/furnish.js"), "utf8");
+  assert.ok(furnish.includes(`const MODEL_VERSION = "${stamps.model}";`), "furnish.js MODEL_VERSION is stale: run node scripts/stamp-assets.mjs");
+  assert.match(furnish, /\.glb\?v=\$\{MODEL_VERSION\}/);
+  const headers = readFileSync(join(import.meta.dirname, "../public/_headers"), "utf8");
+  const longCached = [...headers.matchAll(/^(\/\S+)\n\s+Cache-Control: [^\n]*immutable/gm)].map((match) => match[1]);
+  assert.deepEqual(longCached.sort(), ["/office/assets/*", "/office/vendor/*"]);
+});
+
+test("redraw skips frames where nothing visible changed", async () => {
+  const { createRedraw } = await import(pathToFileURL(join(import.meta.dirname, "../public/office/world-redraw.js")).href);
+  const matrix = () => ({ elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] });
+  const color = (r) => ({ r, g: 0.5, b: 0.5 });
+  const mesh = (id, castShadow) => ({
+    id, visible: true, isMesh: true, castShadow, receiveShadow: false, renderOrder: 0, children: [], matrixWorld: matrix(),
+    geometry: { id: 1, boundingSphere: { radius: 1, center: { length: () => 0 } } }, material: { id: 2, version: 0, visible: true, transparent: false, depthWrite: true, side: 0, opacity: 1, color: color(1), emissive: color(0), emissiveIntensity: 1, map: null },
+  });
+  const desk = mesh(10, true);
+  const body = mesh(11, true);
+  const actorGroup = { visible: true, children: [body], matrixWorld: matrix() };
+  const scene = { visible: true, children: [desk, actorGroup], updateMatrixWorld() {}, fog: null, background: null };
+  const sun = { matrixWorld: matrix(), target: { matrixWorld: matrix() }, shadow: { camera: { left: -1, right: 1, top: 1, bottom: -1 }, bias: 0, normalBias: 0, mapSize: { x: 512 } } };
+  const camera = { fov: 45, position: { distanceTo: () => 600 }, matrixWorld: matrix(), projectionMatrix: matrix() };
+  const renderer = { domElement: { height: 800 }, getPixelRatio: () => 1, shadowMap: { needsUpdate: false } };
+  const redraw = createRedraw({ actorGroup, camera, look: {}, outlineWidth: () => 1, renderer, scene, sun });
+  assert.equal(redraw.due(0), true, "first frame draws");
+  renderer.shadowMap.needsUpdate = false;
+  assert.equal(redraw.due(16), false, "unchanged frame is skipped");
+  body.matrixWorld.elements[13] += 0.001;
+  assert.equal(redraw.due(32), false, "a breath far below a pixel is skipped");
+  body.matrixWorld.elements[13] += 2;
+  assert.equal(redraw.due(48), true, "a visible move draws");
+  assert.equal(renderer.shadowMap.needsUpdate, true, "a moving shadow caster redraws shadows");
+  renderer.shadowMap.needsUpdate = false;
+  desk.material.color.r = 0.9;
+  assert.equal(redraw.due(64), true, "a recolour draws");
+  assert.equal(renderer.shadowMap.needsUpdate, false, "a recolour keeps the shadows");
+  desk.matrixWorld.elements[12] += 0.001;
+  assert.equal(redraw.due(80), true, "furniture has no tolerance");
+  assert.equal(redraw.due(96), false);
+  redraw.force();
+  assert.equal(redraw.due(112), true, "force draws");
+  assert.equal(redraw.due(2000), true, "heartbeat draws");
 });
