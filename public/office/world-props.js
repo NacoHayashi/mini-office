@@ -280,6 +280,7 @@ export function createProps(ctx) {
     }
     group.position.set(cx, 0, cz);
     group.userData.propKind = prop.kind;
+    if (prop.kind === "decor") group.userData.model = prop.model;
     if (prop.kind === "stalldoor" && group.userData.doorPivot) doorPivots.set(prop.id, group.userData.doorPivot);
     group.userData.occlude = occlude;
     if (occlude || group.userData.paint) ownMaterials(group);

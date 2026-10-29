@@ -272,6 +272,7 @@ export function createWorld({ view, preview, labels, fallback }) {
     animateActor,
     frameToys,
     nudge,
+    setGymHook,
     setSnackHook,
     setToyHook,
     signature,
@@ -783,10 +784,13 @@ export function createWorld({ view, preview, labels, fallback }) {
     setMeetingHook,
     setMonitorHook,
     setSnackHook,
+    setGymHook,
     setStallHook,
     setToyHook,
     model,
     get fx() { return fxGroup; },
+    /** The placed group for the first decor piece using this model, or null while models load. */
+    decor(name) { return propGroup.children.find((group) => group.userData.model === name && group.children.length) || null; },
     crown(id) {
       const actor = actors.get(id);
       return actor ? crownWorldY(actor) : null;

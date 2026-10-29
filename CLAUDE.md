@@ -17,12 +17,13 @@
 - `scripts/bundle-office.mjs`、`scripts/office-*.mjs`：打包辦公室用的 three.js 擴充到 `public/office/vendor/`。
 - `src/index.ts`：Worker 進入點與路由分派。
 - `src/office-room.ts`：辦公室 Durable Object 進入點（請求分派、WebSocket、移動、聊天、外觀）。
-- `src/room-*.ts`：辦公室 Durable Object 依功能分開的部分：`room-base`（共用狀態與儲存）、`room-login`（登入、配對、訪客）、`room-admin`（管理頁）、`room-scores`（分數）、`room-seats`（椅子、高腳椅）、`room-toys`（玩具、碰撞）、`room-snacks`（零食、廁所）、`room-whisper`（悄悄話）、`room-furniture`（擺設編輯）、`room-meeting`（會議室白板、螢幕、舉手、投票、室內聊天）、`room-pantry`（茶水間熱飲、微波爐、丟零食、冰箱便利貼）。
+- `src/room-*.ts`：辦公室 Durable Object 依功能分開的部分：`room-base`（共用狀態與儲存）、`room-login`（登入、配對、訪客）、`room-admin`（管理頁）、`room-scores`（分數）、`room-seats`（椅子、高腳椅）、`room-toys`（玩具、碰撞）、`room-snacks`（零食、廁所）、`room-whisper`（悄悄話）、`room-furniture`（擺設編輯）、`room-meeting`（會議室白板、螢幕、舉手、投票、室內聊天）、`room-pantry`（茶水間熱飲、微波爐、丟零食、冰箱便利貼）、`room-gym`（健身房啞鈴排行榜、瑜珈、彈力球、飲水機）。
 - `src/content.ts`：地圖、角色造型、家具定義與輸入正規化。
 - `src/migrations.ts`：資料表結構、版本遷移、備份與還原。
 - `src/snacks.ts`：零食櫃與販賣機庫存。
 - `src/meeting.ts`：會議室白板、螢幕與投票的狀態規則。
 - `src/pantry.ts`：茶水間冰箱便利貼與微波爐的狀態規則。
+- `src/gym.ts`：健身房排行榜（存在房間的 meta，不用遷移）、短暫加速、瑜珈姿勢的規則。
 - `src/pairing.ts`、`src/admin-session.ts`、`src/crypto.ts`、`src/http.ts`：裝置配對、管理員工作階段、共用工具。
 - `public/office/game.js`：辦公室前端進入點（畫面迴圈、版面、啟動）；同目錄依功能分檔：`office-state.js`（共用狀態）、`net.js`（連線）、`login.js`、`movement.js`、`input.js`、`interact.js`、`edit-mode.js`、`whisper.js`、`people.js`、`chat.js`、`actions.js`、`arcade.js`、`look-editor.js`、`debug.js`。
 - `public/office/world3d.js`：3D 場景主體與繪製；`world-*.js` 分別是材質、房間、家具、角色、名牌、預覽、鏡頭。
@@ -33,6 +34,7 @@
 - `public/office/monitors.js`：有人坐在桌前時那張桌子的螢幕亮起，起身就暗。
 - `public/office/meeting.js`：會議室工具列、白板、螢幕、舉手與投票。
 - `public/office/pantry.js`：茶水間熱飲冒煙、微波爐叮一聲、丟零食給同事、冰箱便利貼。
+- `public/office/gym.js`：健身房舉啞鈴與排行榜、加速光圈、瑜珈姿勢、彈力球、飲水機。健身房不放椅子。
 - `panel/`：管理頁的頁面、腳本與樣式；`public/office/office.css`：辦公室樣式。
 - `public/office/vendor/`：打包好的第三方程式，不要手改。
 - `tests/unit.mjs`、`tests/office.e2e.mjs`、`tests/lobby.e2e.mjs`：單元、辦公室 e2e、大廳 e2e。

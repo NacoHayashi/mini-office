@@ -1,5 +1,5 @@
 // window.office test hooks, exposed on localhost or with ?debug.
-import { ensureLoop, meeting, monitors, pantry, snacks, stalls, toys } from "./game.js";
+import { ensureLoop, gym, meeting, monitors, pantry, snacks, stalls, toys } from "./game.js";
 import { pinOverlays } from "./input.js";
 import { cloneLook, presetOf } from "./look-editor.js";
 import { bodyRadius, collides, findPath, freeSpot, screenToWorld, worldToScreen } from "./movement.js";
@@ -162,6 +162,9 @@ export function exposeDebug() {
     get pantry() { return pantry.view(); },
     pantryOpen(which) { return pantry.open(which); },
     pantrySend(op, extra = {}) { send({ ...extra, t: "pantry", op }); },
+    get gym() { return gym.view(); },
+    gymInteract() { return gym.interact(); },
+    gymSend(op, extra = {}) { send({ ...extra, t: "gym", op }); },
     meetingOpen(tool) { meeting.open(tool || ""); },
     meetingSend(op, extra = {}) { send({ ...extra, t: "meeting", op }); },
     feed(message) { onNet(message); },

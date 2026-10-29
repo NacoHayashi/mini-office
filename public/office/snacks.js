@@ -18,6 +18,8 @@ const ITEMS = [
   { id: "cocoa", label: "熱可可", machine: "coffee", pose: "drink", tint: 0xffd6e4, top: 0xb07a5a, hot: true },
   { id: "hottea", label: "熱紅茶", machine: "coffee", pose: "drink", tint: 0xd9efff, top: 0xd9894a, hot: true },
   { id: "bun", label: "熱包子", machine: "microwave", pose: "eat", tint: 0xfffaf2, hot: true },
+  // The gym water cooler.
+  { id: "water", label: "冰開水", machine: "cooler", pose: "drink", tint: 0xe3f4ff, top: 0xbfe6ff },
 ];
 
 const BY_ID = new Map(ITEMS.map((item) => [item.id, item]));

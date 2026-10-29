@@ -40,7 +40,7 @@ export abstract class RoomPantry extends RoomMeeting {
   }
 
   /** Hands a pantry treat to someone and shows it in their hands for everyone. */
-  private handOver(ws: WebSocket, att: Att, itemId: string): boolean {
+  protected handOver(ws: WebSocket, att: Att, itemId: string): boolean {
     if (this.toys.hand(att.id)) {
       this.pantryError(ws, "先把玩具放下");
       return false;

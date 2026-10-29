@@ -150,7 +150,7 @@ h1, h2 { margin: 0 0 8px; }
     #fff6fb;
 }
 
-#topbar, #online, #hint, #dialogue, #snack-menu, #pantry-panel, #editbar, #chatbar, #help, #avatar, #gate, #board {
+#topbar, #online, #hint, #dialogue, #snack-menu, #pantry-panel, #gym-panel, #editbar, #chatbar, #help, #avatar, #gate, #board {
   position: fixed;
   z-index: 3;
 }
@@ -464,7 +464,7 @@ h1, h2 { margin: 0 0 8px; }
   gap: 8px;
   text-align: left;
 }
-#pantry-panel {
+#pantry-panel, #gym-panel {
   left: 50%;
   bottom: 112px;
   transform: translateX(-50%);
@@ -477,10 +477,10 @@ h1, h2 { margin: 0 0 8px; }
   box-shadow: var(--shadow);
   z-index: 5;
 }
-#pantry-panel .pantry-line { margin: 8px 0; color: var(--muted); font-weight: 700; }
+#pantry-panel .pantry-line, #gym-panel .gym-line { margin: 8px 0; color: var(--muted); font-weight: 700; }
 #pantry-panel .pantry-ding { color: #f07a9c; font-size: 20px; }
 #pantry-panel .pantry-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0; }
-#pantry-panel button { min-height: var(--btn-h-lg); }
+#pantry-panel button, #gym-panel button { min-height: var(--btn-h-lg); }
 #pantry-panel button.item {
   background: #fff;
   color: var(--ink);
@@ -489,7 +489,10 @@ h1, h2 { margin: 0 0 8px; }
   padding: var(--pad-default);
   text-align: left;
 }
-#pantry-panel button.big { width: 100%; margin: 6px 0 10px; }
+#pantry-panel button.big, #gym-panel button.big { width: 100%; margin: 6px 0 10px; }
+#gym-panel .gym-board { margin: 6px 0 10px; padding-left: 24px; }
+#gym-panel .gym-board li { padding: 4px 0; font-weight: 700; }
+#gym-panel .gym-board li b { float: right; color: var(--muted); }
 #pantry-panel .pantry-bar { height: 12px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 6px 0 10px; }
 #pantry-panel .pantry-bar span { display: block; height: 100%; width: 0; background: #ffd27a; border-radius: inherit; animation: pantry-fill linear forwards; }
 @keyframes pantry-fill { to { width: 100%; } }
@@ -970,12 +973,12 @@ body:has(#near-menu:not([hidden])) #whisper-asks { bottom: 172px; }
     bottom: auto;
     max-width: calc(100% - 24px);
   }
-  #pantry-panel {
+  #pantry-panel, #gym-panel {
     bottom: calc(12px + var(--kb, 0px) + env(safe-area-inset-bottom));
     width: min(420px, calc(100% - 16px));
     max-height: calc(100% - 16px - var(--kb, 0px) - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   }
-  #pantry-panel button { min-height: var(--btn-h-lg); padding: var(--pad-large); font-size: 16px; }
+  #pantry-panel button, #gym-panel button { min-height: var(--btn-h-lg); padding: var(--pad-large); font-size: 16px; }
   #pantry-panel .fridge-tints button.tint { padding: 0; }
   #snack-menu {
     bottom: calc(12px + env(safe-area-inset-bottom));

@@ -3193,6 +3193,124 @@ async function pantryRoom(browser) {
   for (const context of [baristaContext, catcherContext]) await context.close();
 }
 
+async function gymShot(page, name, view) {
+  const dir = process.env.GYM_SHOTS;
+  if (!dir) return;
+  mkdirSync(dir, { recursive: true });
+  if (view) {
+    await page.evaluate((view) => window.office.setView(view), view);
+    await settleView(page);
+  }
+  await page.waitForTimeout(250);
+  await page.screenshot({ path: join(dir, `${name}.png`) });
+}
+
+// walkTo stops within a body or so; this then steps onto the exact spot, so the next tile path
+// starts there and does not clip the gym bench's corner.
+// The server drops a move sent right after another one, so keep stepping until a coworker sees it.
+async function stepTo(page, x, y, witness) {
+  await walkTo(page, x, y);
+  for (let tries = 0; ; tries++) {
+    const at = await page.evaluate(({ x, y }) => {
+      window.office.place(x, y);
+      return { id: window.office.me.id, x: window.office.me.x, y: window.office.me.y };
+    }, { x, y });
+    const seen = await witness.waitForFunction((at) => window.office.others.some((other) => other.id === at.id && Math.hypot(other.x - at.x, other.y - at.y) < 2), at, { timeout: 5000 }).then(() => true, () => false);
+    if (seen) return;
+    assert(tries < 5, `${at.id} 站不到 ${x},${y}`);
+  }
+}
+
+// Walk to the spot and wait until this gym spot is the nearest one.
+async function gymSpot(page, which, x, y, witness) {
+  await stepTo(page, x, y, witness);
+  await page.waitForFunction((which) => window.office.gym.near[0] === which, which, { timeout: 15000 });
+}
+
+async function gymRoom(browser) {
+  const setPassword = await fetch(`${ORIGIN}/api/office/admin/password`, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${ADMIN}`, origin: ORIGIN },
+    body: JSON.stringify({ password: PASS }),
+  });
+  assert(setPassword.ok, `健身房測試沒設好密碼 ${setPassword.status}`);
+  const open = async (id, name, animal) => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const page = await context.newPage();
+    const slow = Number(process.env.E2E_CPU_THROTTLE || 0);
+    if (slow > 1) await (await context.newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate: slow });
+    await register(page, id, name, animal);
+    return { context, page };
+  };
+  const { context: lifterContext, page: lifter } = await open("lifter", "舉重", "貓");
+  const { context: watcherContext, page: watcher } = await open("watcher", "旁觀", "狗");
+  for (const page of [lifter, watcher]) await assetsReady(page);
+  const close = { yaw: 0.6, dist: 200, pitch: 0.5 };
+  // No chairs in the gym.
+  const seats = await lifter.evaluate(() => window.office.furniture.filter((item) => item.x > 416 && item.x < 640 && item.y > 800 && item.y < 1056).map((item) => item.kind));
+  assert(seats.length === 0, `健身房不該有椅子 ${seats}`);
+
+  // Dumbbells: E opens the rack, one set goes on the board for everyone and gives a short speed buff.
+  await gymSpot(lifter, "lift", 575, 858, watcher);
+  await lifter.locator("#hint", { hasText: "按 E 舉啞鈴" }).waitFor();
+  await lifter.keyboard.press("e");
+  await lifter.locator("#gym-lift").click();
+  for (const page of [lifter, watcher]) {
+    await page.waitForFunction(() => {
+      const gym = window.office.gym;
+      return gym.board[0]?.id === "lifter" && gym.board[0].sets === 1 && gym.buffed.includes("lifter") && gym.rings > 0;
+    });
+  }
+  await lifter.waitForFunction(() => window.office.gym.mine?.rank === 1 && window.office.gym.boost > 1);
+  await gymShot(lifter, "lift-panel");
+  await lifter.keyboard.press("Escape");
+  await lifter.waitForFunction(() => !window.office.gym.open);
+  await gymShot(lifter, "lift-buff", close);
+
+  // Yoga: standing on the mat, E strikes a pose everyone sees; stepping off ends it.
+  // Round the bench's west side; the gap between the bench and the rack is too tight for the tile path.
+  await stepTo(lifter, 500, 845, watcher);
+  await stepTo(lifter, 520, 1020, watcher);
+  await lifter.waitForFunction(() => window.office.gym.near.includes("yoga"));
+  await lifter.keyboard.press("e");
+  for (const page of [lifter, watcher]) await page.waitForFunction(() => window.office.gym.poses.includes("lifter"));
+  await lifter.locator("#hint", { hasText: "按 E 結束瑜珈" }).waitFor();
+  await gymShot(lifter, "yoga", close);
+  await walkTo(lifter, 520, 950);
+  for (const page of [lifter, watcher]) await page.waitForFunction(() => window.office.gym.poses.length === 0);
+
+  // The bouncy ball hops for everyone.
+  await gymSpot(lifter, "ball", 590, 985, watcher);
+  const before = await watcher.evaluate(() => window.office.gym.bounces);
+  await lifter.keyboard.press("e");
+  await watcher.waitForFunction((before) => window.office.gym.bounces > before, before);
+  await gymShot(lifter, "ball", close);
+
+  // Phone: the actions bar opens the rack, the panel fits and its buttons are big enough; then water from the cooler.
+  await lifter.setViewportSize({ width: 390, height: 844 });
+  await stepTo(lifter, 500, 960, watcher);
+  await stepTo(lifter, 500, 845, watcher);
+  await gymSpot(lifter, "lift", 575, 858, watcher);
+  await lifter.getByRole("button", { name: "舉啞鈴" }).click();
+  await lifter.waitForFunction(() => window.office.gym.open);
+  const sizes = await lifter.locator("#gym-panel button").evaluateAll((nodes) => nodes.map((node) => {
+    const box = node.getBoundingClientRect();
+    return [node.textContent, Math.round(box.width), Math.round(box.height)];
+  }));
+  assert(sizes.every(([, w, h]) => w >= 44 && h >= 44), `手機上健身房按鈕要夠大 ${JSON.stringify(sizes)}`);
+  const panelBox = await lifter.locator("#gym-panel").boundingBox();
+  assert(panelBox && panelBox.x >= 0 && panelBox.x + panelBox.width <= 390 && panelBox.y >= 0 && panelBox.y + panelBox.height <= 844, "手機上健身房面板超出畫面");
+  await gymShot(lifter, "phone-panel");
+  await lifter.locator("#gym-close").click();
+  await gymSpot(lifter, "water", 596, 830, watcher);
+  await lifter.getByRole("button", { name: "喝水" }).click();
+  for (const page of [lifter, watcher]) await page.waitForFunction(() => window.office.snackCarryOf("lifter") === "water");
+  await lifter.waitForFunction(() => window.office.gym.near.length === 0);
+  await gymShot(lifter, "phone-water", close);
+
+  for (const context of [lifterContext, watcherContext]) await context.close();
+}
+
 // Close-up around a spot in the meeting room, plus the whole view.
 async function meetingShot(page, name, spot, view) {
   const dir = process.env.MEETING_SHOTS;
@@ -3765,6 +3883,15 @@ async function main() {
       }
       return;
     }
+    if (process.argv.includes("--gym")) {
+      try {
+        await gymRoom(browser);
+        console.log("gym ok");
+      } finally {
+        publishShots();
+      }
+      return;
+    }
     if (process.argv.includes("--toys")) {
       try {
         await toyRoom(browser);
@@ -3778,7 +3905,7 @@ async function main() {
       // without --part they all run here in order. Each part keeps the original order.
       const parts = [
         [snackLounge, toyRoom, removedDeviceCanRegister, phoneCamera, coreOffice, pantryRoom],
-        [chatModeAndCamera, seatedCamera, guestOffice, chairHome, sofaAndUnstuck, reviewFixes],
+        [chatModeAndCamera, seatedCamera, guestOffice, chairHome, sofaAndUnstuck, reviewFixes, gymRoom],
         [restrooms, deskMonitors, meetingRoom],
       ];
       const steps = CORE_PART ? parts[CORE_PART - 1] : parts.flat();
